@@ -52,7 +52,7 @@ export default defineConfig({
 		},
 		{
 			name: "chromium",
-			testIgnore: /guest-booking/,
+			testIgnore: /guest-booking|custom-forms/,
 			use: {
 				...devices["Desktop Chrome"],
 				storageState: authFile,
@@ -74,6 +74,23 @@ export default defineConfig({
 				...devices["Desktop Chrome"],
 			},
 			dependencies: ["guest-event-setup"],
+		},
+		{
+			name: "custom-forms-setup",
+			testMatch: /custom-forms\.setup\.ts/,
+			use: {
+				storageState: authFile,
+			},
+			dependencies: ["setup"],
+		},
+		{
+			name: "custom-forms-chromium",
+			testMatch: /custom-forms\.spec\.ts/,
+			use: {
+				...devices["Desktop Chrome"],
+				storageState: authFile,
+			},
+			dependencies: ["custom-forms-setup"],
 		},
 		{
 			name: "offline-payment-setup",
