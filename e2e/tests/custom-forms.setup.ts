@@ -1,16 +1,14 @@
-import { test as setup } from "@playwright/test";
+import { test as setup, expect } from "@playwright/test";
 import { createDoc, docExists, getDoc, getList, updateDoc } from "../helpers/frappe";
 
 interface NamedDoc {
 	name: string;
 }
 
-const testEventRoute = "test-event-e2e";
+const testEventRoute = "custom-forms-e2e";
 const testCategoryName = "E2E Test Category";
 const testHostName = "E2E Test Host";
 
-// Ensures the E2E test event exists and has custom form toggles enabled.
-// Works both standalone and after event.setup.ts.
 setup("setup custom forms on test event", async ({ request }) => {
 	let eventName: string;
 
@@ -20,7 +18,6 @@ setup("setup custom forms on test event", async ({ request }) => {
 
 	if (events.length > 0) {
 		eventName = events[0].name;
-		console.log(`Reusing existing event: ${eventName}`);
 	} else {
 		if (!(await docExists(request, "Event Category", testCategoryName))) {
 			await createDoc(request, "Event Category", {
@@ -38,7 +35,7 @@ setup("setup custom forms on test event", async ({ request }) => {
 		const startDate = futureDate.toISOString().split("T")[0];
 
 		const event = await createDoc<NamedDoc>(request, "Buzz Event", {
-			title: "E2E Test Event",
+			title: "E2E Custom Forms Event",
 			category: testCategoryName,
 			host: testHostName,
 			start_date: startDate,
@@ -49,7 +46,6 @@ setup("setup custom forms on test event", async ({ request }) => {
 			medium: "In Person",
 		});
 		eventName = event.name;
-		console.log(`Created event: ${eventName}`);
 	}
 
 	await updateDoc(request, "Buzz Event", eventName, {
@@ -64,5 +60,7 @@ setup("setup custom forms on test event", async ({ request }) => {
 		request, "Buzz Event", eventName,
 	);
 	const publishedForms = (updated.custom_forms || []).filter((f) => f.publish);
+	expect(publishedForms.length).toBe(3);
+
 	console.log(`Custom forms enabled on event: ${eventName} (${publishedForms.length} forms: ${publishedForms.map((f) => f.route).join(", ")})`);
 });

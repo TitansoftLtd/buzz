@@ -2,7 +2,7 @@ import { test, expect } from "@playwright/test";
 import { CustomFormPage } from "../pages";
 import { callMethod } from "../helpers/frappe";
 
-const testEventRoute = "test-event-e2e";
+const testEventRoute = "custom-forms-e2e";
 
 test.describe("Event Feedback Form", () => {
 	test("should display feedback form with title", async ({ page }) => {
