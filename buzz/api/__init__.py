@@ -5,6 +5,7 @@ import frappe
 import pyotp
 from frappe import _
 from frappe.auth import LoginAttemptTracker
+from frappe.core.doctype.sms_settings.sms_settings import send_sms
 from frappe.rate_limiter import rate_limit
 from frappe.translate import get_all_translations
 from frappe.utils import (
@@ -14,11 +15,16 @@ from frappe.utils import (
 	get_datetime,
 	get_datetime_in_timezone,
 	get_system_timezone,
+	now_datetime,
 	today,
 	validate_email_address,
 )
 
-from buzz.payments import get_payment_gateways_for_event, get_payment_link_for_booking
+from buzz.payments import (
+	get_payment_gateways_for_event,
+	get_payment_link_for_booking,
+	get_payment_link_for_sponsorship,
+)
 from buzz.utils import is_app_installed
 
 OFFLINE_PAYMENT_METHOD = "Offline"
@@ -27,9 +33,6 @@ OFFLINE_PAYMENT_METHOD = "Offline"
 @frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 @rate_limit(key="identifier", limit=5, seconds=3600)
 def send_guest_booking_otp(event: int, identifier: str) -> dict:
-	"""Send OTP via email or SMS for guest booking verification."""
-	from frappe.core.doctype.sms_settings.sms_settings import send_sms
-
 	event_doc = frappe.get_cached_doc("Buzz Event", event)
 
 	if not event_doc.allow_guest_booking:
@@ -78,7 +81,6 @@ def send_guest_booking_otp(event: int, identifier: str) -> dict:
 
 
 def verify_guest_otp(channel: str, identifier: str, otp: str):
-	"""Verify OTP for guest booking. Raises on failure."""
 	cache_key = f"guest_booking_otp:{channel}:{identifier}"
 	tracker = LoginAttemptTracker(
 		key=f"guest_otp:{channel}:{identifier}",
@@ -102,7 +104,6 @@ def verify_guest_otp(channel: str, identifier: str, otp: str):
 
 
 def get_or_create_guest_user(email: str, full_name: str) -> str:
-	"""Get existing user or create a new user silently without sending welcome email."""
 	email = email.lower().strip()
 
 	validate_email_address(email, throw=True)
@@ -131,12 +132,10 @@ def get_or_create_guest_user(email: str, full_name: str) -> str:
 
 @frappe.whitelist()
 def get_event_payment_gateways(event: str) -> list[str]:
-	"""Get available payment gateways for an event."""
 	return get_payment_gateways_for_event(event)
 
 
 def are_registrations_closed(event_doc) -> bool:
-	"""Check if registrations are closed based on the event's registrations_close_at datetime."""
 	if not event_doc.registrations_close_at:
 		return False
 
@@ -147,56 +146,30 @@ def are_registrations_closed(event_doc) -> bool:
 
 
 def is_ticket_transfer_allowed(event_id: str | int) -> bool:
-	"""Check if ticket transfer is allowed based on event start date and settings."""
 	try:
-		# Get event details
 		event = frappe.get_cached_doc("Buzz Event", event_id)
-
-		# Get event management settings
 		settings = frappe.get_single("Buzz Settings")
-
-		# Default to 7 days if no setting is found
 		transfer_cutoff_days = settings.get("allow_transfer_ticket_before_event_start_days", 7)
 
-		# Calculate days difference between today and event start date
-		event_start_date = event.start_date
-		if not event_start_date:
+		if not event.start_date:
 			return False
 
-		# Get days remaining until event starts
-		days_until_event = days_diff(event_start_date, today())
-
-		# Transfer is allowed if there are more days remaining than the cutoff
-		return days_until_event >= transfer_cutoff_days
-
+		return days_diff(event.start_date, today()) >= transfer_cutoff_days
 	except Exception as e:
 		frappe.log_error(f"Error checking ticket transfer eligibility: {e!s}")
 		return False
 
 
 def is_add_on_change_allowed(event_id: str | int) -> bool:
-	"""Check if add-on changes are allowed based on event start date and settings."""
 	try:
-		# Get event details
 		event = frappe.get_cached_doc("Buzz Event", event_id)
-
-		# Get event management settings
 		settings = frappe.get_cached_doc("Buzz Settings")
-
-		# Default to 7 days if no setting is found
 		add_on_change_cutoff_days = settings.get("allow_add_ons_change_before_event_start_days", 7)
 
-		# Calculate days difference between today and event start date
-		event_start_date = event.start_date
-		if not event_start_date:
+		if not event.start_date:
 			return False
 
-		# Get days remaining until event starts
-		days_until_event = days_diff(event_start_date, today())
-
-		# Add-on changes are allowed if there are more days remaining than the cutoff
-		return days_until_event >= add_on_change_cutoff_days
-
+		return days_diff(event.start_date, today()) >= add_on_change_cutoff_days
 	except Exception as e:
 		frappe.log_error(f"Error checking add-on change eligibility: {e!s}")
 		return False
@@ -204,41 +177,26 @@ def is_add_on_change_allowed(event_id: str | int) -> bool:
 
 @frappe.whitelist()
 def can_transfer_ticket(event_id: str | int) -> dict:
-	"""API endpoint to check if ticket transfer is allowed for an event."""
 	return {"can_transfer": is_ticket_transfer_allowed(event_id), "event_id": event_id}
 
 
 @frappe.whitelist()
 def can_change_add_ons(event_id: str | int) -> dict:
-	"""API endpoint to check if add-on changes are allowed for an event."""
 	return {"can_change_add_ons": is_add_on_change_allowed(event_id), "event_id": event_id}
 
 
 def is_cancellation_request_allowed(event_id: str | int) -> bool:
-	"""Check if cancellation request is allowed based on event start date and settings."""
 	try:
-		# Get event details
 		event = frappe.get_cached_doc("Buzz Event", event_id)
-
-		# Get event management settings
 		settings = frappe.get_cached_doc("Buzz Settings")
-
-		# Default to 7 days if no setting is found
 		cancellation_cutoff_days = settings.get(
 			"allow_ticket_cancellation_request_before_event_start_days", 7
 		)
 
-		# Calculate days difference between today and event start date
-		event_start_date = event.start_date
-		if not event_start_date:
+		if not event.start_date:
 			return False
 
-		# Get days remaining until event starts
-		days_until_event = days_diff(event_start_date, today())
-
-		# Cancellation request is allowed if there are more days remaining than the cutoff
-		return days_until_event >= cancellation_cutoff_days
-
+		return days_diff(event.start_date, today()) >= cancellation_cutoff_days
 	except Exception as e:
 		frappe.log_error(f"Error checking cancellation request eligibility: {e!s}")
 		return False
@@ -246,7 +204,6 @@ def is_cancellation_request_allowed(event_id: str | int) -> bool:
 
 @frappe.whitelist()
 def can_request_cancellation(event_id: str | int) -> dict:
-	"""API endpoint to check if cancellation request is allowed for an event."""
 	return {"can_request_cancellation": is_cancellation_request_allowed(event_id), "event_id": event_id}
 
 
@@ -258,7 +215,6 @@ def get_event_booking_data(event_route: str) -> dict:
 	if not event_doc.is_published:
 		frappe.throw(_("Event not found"), frappe.DoesNotExistError)
 
-	# Check if registrations are closed
 	data.registrations_closed = are_registrations_closed(event_doc)
 
 	is_guest = frappe.session.user == "Guest"
@@ -295,7 +251,6 @@ def get_event_booking_data(event_route: str) -> dict:
 		data.guest_booking_disabled = True
 		return data
 
-	# Ticket Types
 	available_ticket_types = []
 	published_ticket_types = frappe.db.get_all(
 		"Event Ticket Type", filters={"is_published": True, "event": event_doc.name}, pluck="name"
@@ -306,7 +261,6 @@ def get_event_booking_data(event_route: str) -> dict:
 			available_ticket_types.append(tt)
 	data.available_ticket_types = available_ticket_types
 
-	# Ticket Add-ons
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on", filters={"event": event_doc.name, "enabled": 1}, fields=["*"], order_by="title"
 	)
@@ -317,7 +271,6 @@ def get_event_booking_data(event_route: str) -> dict:
 
 	data.available_add_ons = add_ons
 
-	# Tax Settings (from Event)
 	data.tax_settings = {
 		"apply_tax": event_doc.apply_tax,
 		"tax_inclusive": event_doc.tax_inclusive,
@@ -325,7 +278,6 @@ def get_event_booking_data(event_route: str) -> dict:
 		"tax_percentage": event_doc.tax_percentage or 0,
 	}
 
-	# Custom Fields
 	custom_fields = frappe.db.get_all(
 		"Buzz Custom Field",
 		filters={"event": event_doc.name, "enabled": 1},
@@ -334,10 +286,8 @@ def get_event_booking_data(event_route: str) -> dict:
 	)
 	data.custom_fields = custom_fields
 
-	# Payment Gateways
 	payment_gateways = get_payment_gateways_for_event(event_doc.name)
 
-	# Offline Payment Methods
 	offline_methods_raw = frappe.get_all(
 		"Offline Payment Method",
 		filters={"event": event_doc.name, "enabled": 1},
@@ -347,7 +297,6 @@ def get_event_booking_data(event_route: str) -> dict:
 
 	offline_methods = []
 	for method in offline_methods_raw:
-		# Fetch custom fields scoped to this offline payment method
 		method_custom_fields = frappe.get_all(
 			"Buzz Custom Field",
 			filters={
@@ -438,7 +387,6 @@ def process_booking(
 	booking.coupon_code = coupon_code
 	booking.user = booking_user
 
-	# Add UTM parameters (captured from URL query params starting with utm_)
 	if utm_parameters:
 		for utm_param in utm_parameters:
 			booking.append(
@@ -449,9 +397,7 @@ def process_booking(
 				},
 			)
 
-	# Add booking-level custom fields
 	if booking_custom_fields:
-		# Get custom field definitions for this event to get proper labels and types
 		booking_custom_field_defs = frappe.db.get_all(
 			"Buzz Custom Field",
 			filters={"event": event, "enabled": 1, "applied_to": "Booking"},
@@ -460,7 +406,7 @@ def process_booking(
 		custom_field_map = {cf["fieldname"]: cf for cf in booking_custom_field_defs}
 
 		for field_name, field_value in booking_custom_fields.items():
-			if field_value and field_name in custom_field_map:  # Only add non-empty values and valid fields
+			if field_value and field_name in custom_field_map:
 				field_def = custom_field_map[field_name]
 				booking.append(
 					"additional_fields",
@@ -471,7 +417,6 @@ def process_booking(
 						"fieldtype": field_def["fieldtype"],
 					},
 				)
-	# Validate last name is provided for webinar events (required for Zoom registration)
 	if event_doc.category == "Webinars":
 		for attendee in attendees:
 			if not (attendee.get("last_name") or "").strip():
@@ -481,7 +426,6 @@ def process_booking(
 		first_name = (attendee.get("first_name") or "").strip()
 		last_name = (attendee.get("last_name") or "").strip()
 
-		# Backward compat: split full_name into first/last if first_name not provided
 		if not first_name and attendee.get("full_name"):
 			name_parts = attendee["full_name"].strip().split(" ", 1)
 			first_name = name_parts[0]
@@ -496,7 +440,6 @@ def process_booking(
 				add_ons=add_ons,
 			)
 
-		# Process custom fields for this attendee
 		custom_fields = attendee.get("custom_fields", {})
 		attendee_row = {
 			"first_name": first_name,
@@ -517,9 +460,7 @@ def process_booking(
 		booking.submit()
 		return {"booking_name": booking.name}
 
-	# Check if offline payment is explicitly requested and enabled
 	if is_offline:
-		# Validate offline payment method exists and is enabled for this event
 		method_filters = {"event": event, "enabled": 1}
 		if offline_payment_method:
 			method_filters["name"] = offline_payment_method
@@ -532,13 +473,11 @@ def process_booking(
 		booking.payment_method = OFFLINE_PAYMENT_METHOD
 		booking.offline_payment_method = method_doc.title
 
-		# Keep booking in draft until approved — don't submit
 		booking.status = "Approval Pending"
 		booking.payment_status = "Verification Pending"
 		booking.flags.ignore_permissions = True
 		booking.save()
 
-		# Attach payment proof if provided
 		if payment_proof:
 			try:
 				file_doc = frappe.get_doc(
@@ -566,7 +505,6 @@ def process_booking(
 
 
 def create_add_on_doc(attendee_name: str, add_ons: list[dict]):
-	"""Create a new Attendee Ticket Add-on document."""
 	for add_on in add_ons:
 		add_on["currency"] = frappe.db.get_value("Ticket Add-on", add_on["add_on"], "currency")
 
@@ -577,8 +515,6 @@ def create_add_on_doc(attendee_name: str, add_ons: list[dict]):
 
 @frappe.whitelist()
 def transfer_ticket(ticket_id: str, new_first_name: str, new_last_name: str, new_email: str):
-	"""Transfer a ticket to a new attendee."""
-	# Validate ticket exists
 	if not frappe.db.exists("Event Ticket", ticket_id):
 		frappe.throw(frappe._("Ticket not found."))
 
@@ -595,7 +531,6 @@ def transfer_ticket(ticket_id: str, new_first_name: str, new_last_name: str, new
 	if not is_ticket_transfer_allowed(ticket.event):
 		frappe.throw(frappe._("Ticket transfer is not allowed at this time. The transfer window has closed."))
 
-	# Store old attendee info for notification
 	old_name = ticket.attendee_name
 	old_email = ticket.attendee_email
 	new_name = f"{new_first_name} {new_last_name}".strip()
@@ -605,19 +540,15 @@ def transfer_ticket(ticket_id: str, new_first_name: str, new_last_name: str, new
 	ticket.attendee_email = new_email
 	ticket.save(ignore_permissions=True)
 
-	# Send email notifications
 	send_ticket_transfer_emails(ticket.name, old_name, old_email, new_name, new_email)
 
 
 def send_ticket_transfer_emails(ticket_id: str, old_name: str, old_email: str, new_name: str, new_email: str):
-	"""Send email notifications for ticket transfer."""
 	try:
-		# Get ticket and event details
 		ticket = frappe.get_doc("Event Ticket", ticket_id)
 		event = frappe.get_doc("Buzz Event", ticket.event)
 		booking = frappe.get_doc("Event Booking", ticket.booking)
 
-		# Email to old attendee - notification of transfer
 		old_attendee_subject = f"Your ticket for {event.title} has been transferred"
 		old_attendee_message = f"""
 		<p>Dear {old_name},</p>
@@ -642,7 +573,6 @@ def send_ticket_transfer_emails(ticket_id: str, old_name: str, old_email: str, n
 			recipients=[old_email], subject=old_attendee_subject, message=old_attendee_message, delayed=False
 		)
 
-		# Email to new attendee - welcome and ticket details
 		new_attendee_subject = f"Welcome! Your ticket for {event.title}"
 		new_attendee_message = f"""
 		<p>Dear {new_name},</p>
@@ -680,12 +610,10 @@ def send_ticket_transfer_emails(ticket_id: str, old_name: str, old_email: str, n
 
 	except Exception as e:
 		frappe.log_error(f"Failed to send ticket transfer emails for ticket {ticket_id}: {e!s}")
-		# Don't raise the exception to avoid failing the main transfer process
 
 
 @frappe.whitelist()
 def get_booking_details(booking_id: str) -> dict:
-	"""Get detailed information about a specific booking."""
 	details = frappe._dict()
 	booking_doc = frappe.get_cached_doc("Event Booking", booking_id)
 	details.doc = booking_doc
@@ -717,7 +645,6 @@ def get_booking_details(booking_id: str) -> dict:
 		],
 	)
 
-	# Get available options for add-ons
 	event_add_ons = frappe.db.get_all(
 		"Ticket Add-on",
 		filters={"event": booking_doc.event, "user_selects_option": True},
@@ -749,7 +676,6 @@ def get_booking_details(booking_id: str) -> dict:
 	details.tickets = tickets
 	details.event = frappe.get_cached_doc("Buzz Event", booking_doc.event)
 
-	# Get venue details if venue is set
 	if details.event.venue:
 		details.venue = frappe.get_cached_doc("Event Venue", details.event.venue)
 
@@ -757,10 +683,6 @@ def get_booking_details(booking_id: str) -> dict:
 	details.can_change_add_ons = can_change_add_ons(details.event.name)
 	details.can_request_cancellation = can_request_cancellation(details.event.name)
 
-	# Payment
-	frappe.db.get_all("Event Payment", filters={})
-
-	# Check for existing cancellation request
 	existing_cancellation = frappe.db.get_value(
 		"Ticket Cancellation Request",
 		{"booking": booking_id},
@@ -769,23 +691,17 @@ def get_booking_details(booking_id: str) -> dict:
 	)
 	details.cancellation_request = existing_cancellation
 
-	# Determine which tickets have cancellation requested (not yet submitted/accepted)
-	# and which tickets are actually cancelled (docstatus = 2)
 	details.cancellation_requested_tickets = []
 
 	if existing_cancellation and existing_cancellation.docstatus == 0:
-		# Cancellation request exists but not yet submitted (status is "In Review")
 		if existing_cancellation.cancel_full_booking:
-			# If full booking cancellation requested, all tickets have pending cancellation
 			details.cancellation_requested_tickets = [ticket.name for ticket in tickets]
 		else:
-			# If partial cancellation requested, get specific tickets
 			requested_tickets = frappe.db.get_all(
 				"Ticket Cancellation Item", filters={"parent": existing_cancellation.name}, fields=["ticket"]
 			)
 			details.cancellation_requested_tickets = [item.ticket for item in requested_tickets]
 
-	# Get list of actually cancelled tickets (docstatus = 2)
 	details.cancelled_tickets = [ticket.name for ticket in tickets if ticket.docstatus == 2]
 
 	return details
@@ -793,18 +709,12 @@ def get_booking_details(booking_id: str) -> dict:
 
 @frappe.whitelist()
 def change_add_on_preference(add_on_id: str, new_value: str):
-	"""Change the preference value for a ticket add-on."""
-	# Validate that the add-on value exists
 	if not frappe.db.exists("Ticket Add-on Value", add_on_id):
 		frappe.throw(frappe._("Add-on value not found."))
 
-	# Get the add-on value to find the associated ticket and event
 	add_on_value = frappe.get_cached_doc("Ticket Add-on Value", add_on_id)
-
-	# Get the ticket to find the event
 	ticket = frappe.get_cached_doc("Event Ticket", add_on_value.parent)
 
-	# Check if add-on changes are allowed for this event
 	if not is_add_on_change_allowed(ticket.event):
 		frappe.throw(
 			frappe._(
@@ -822,22 +732,17 @@ def change_add_on_preference(add_on_id: str, new_value: str):
 
 @frappe.whitelist()
 def get_sponsorship_details(enquiry_id: str) -> dict:
-	"""Get detailed information about a sponsorship enquiry including event and sponsor details."""
-	# Get the sponsorship enquiry
 	enquiry = frappe.get_doc("Sponsorship Enquiry", enquiry_id)
 
-	# Check if user has permission to view this enquiry
 	if enquiry.owner != frappe.session.user and not frappe.has_permission(
 		"Sponsorship Enquiry", "read", enquiry
 	):
 		frappe.throw(frappe._("Not permitted to view this sponsorship enquiry"))
 
-	# Get tier title if tier exists
 	tier_title = ""
 	if enquiry.tier:
 		tier_title = frappe.db.get_value("Sponsorship Tier", enquiry.tier, "title") or enquiry.tier
 
-	# Get event details
 	event_details = {}
 	if enquiry.event:
 		event = frappe.get_cached_doc("Buzz Event", enquiry.event)
@@ -851,7 +756,6 @@ def get_sponsorship_details(enquiry_id: str) -> dict:
 			"route": getattr(event, "route", ""),
 		}
 
-	# Check if there's a corresponding Event Sponsor
 	sponsor_details = None
 	sponsors = frappe.db.get_all(
 		"Event Sponsor",
@@ -862,7 +766,6 @@ def get_sponsorship_details(enquiry_id: str) -> dict:
 
 	if sponsors:
 		sponsor_details = sponsors[0]
-		# Get sponsor tier title too
 		if sponsor_details.get("tier"):
 			sponsor_tier_title = frappe.db.get_value("Sponsorship Tier", sponsor_details["tier"], "title")
 			sponsor_details["tier_title"] = sponsor_tier_title or sponsor_details["tier"]
@@ -887,7 +790,6 @@ def get_sponsorship_details(enquiry_id: str) -> dict:
 
 @frappe.whitelist()
 def get_user_sponsorship_inquiries() -> list:
-	"""Get all sponsorship inquiries for the current user."""
 	inquiries = frappe.db.get_all(
 		"Sponsorship Enquiry",
 		filters={"owner": frappe.session.user},
@@ -895,7 +797,6 @@ def get_user_sponsorship_inquiries() -> list:
 		order_by="creation desc",
 	)
 
-	# Get event titles and tier titles
 	for inquiry in inquiries:
 		if inquiry.event:
 			event_title = frappe.db.get_value("Buzz Event", inquiry.event, "title")
@@ -907,7 +808,6 @@ def get_user_sponsorship_inquiries() -> list:
 		else:
 			inquiry["tier_title"] = ""
 
-	# Check which inquiries have corresponding sponsors
 	inquiry_names = [inquiry.name for inquiry in inquiries]
 	if inquiry_names:
 		sponsors = frappe.db.get_all(
@@ -928,15 +828,10 @@ def get_user_sponsorship_inquiries() -> list:
 
 @frappe.whitelist()
 def create_sponsorship_payment_link(enquiry_id: str, tier_id: str, payment_gateway: str | None = None) -> str:
-	"""Create a payment link for a sponsorship enquiry with selected tier."""
-	from buzz.payments import get_payment_link_for_sponsorship
-
-	# Verify the enquiry belongs to the current user
 	enquiry = frappe.get_doc("Sponsorship Enquiry", enquiry_id)
 	if enquiry.owner != frappe.session.user:
 		frappe.throw(frappe._("Not permitted to create payment for this enquiry"))
 
-	# Create payment link
 	redirect_url = f"/dashboard/account/sponsorships/{enquiry_id}?success=true"
 	return get_payment_link_for_sponsorship(
 		enquiry_id, tier_id, redirect_url, payment_gateway=payment_gateway
@@ -945,38 +840,31 @@ def create_sponsorship_payment_link(enquiry_id: str, tier_id: str, payment_gatew
 
 @frappe.whitelist()
 def withdraw_sponsorship_enquiry(enquiry_id: str):
-	"""Withdraw a sponsorship enquiry if it's not paid yet."""
-	# Verify the enquiry exists and belongs to the current user
 	enquiry = frappe.get_cached_doc("Sponsorship Enquiry", enquiry_id)
 	if enquiry.owner != frappe.session.user:
 		frappe.throw(frappe._("Not permitted to withdraw this enquiry"))
 
-	# Check if the enquiry can be withdrawn (not paid)
 	if enquiry.status == "Paid":
 		frappe.throw(frappe._("Cannot withdraw a paid sponsorship enquiry"))
 
 	if enquiry.status == "Withdrawn":
 		frappe.throw(frappe._("This sponsorship enquiry has already been withdrawn"))
 
-	# Update status to withdrawn
 	enquiry.status = "Withdrawn"
 	enquiry.save(ignore_permissions=True)
 
 
 @frappe.whitelist()
 def get_ticket_details(ticket_id: str) -> dict:
-	"""Get detailed information about a specific ticket."""
 	details = frappe._dict()
 	ticket_doc = frappe.get_cached_doc("Event Ticket", ticket_id)
 
 	if frappe.session.user != "Administrator":
-		# Verify the ticket belongs to the current user
 		if ticket_doc.attendee_email != frappe.session.user:
 			frappe.throw(frappe._("Not permitted to view this ticket"))
 
 	details.doc = ticket_doc
 
-	# Get add-ons with their details
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on Value",
 		filters={"parent": ticket_id},
@@ -991,7 +879,6 @@ def get_ticket_details(ticket_id: str) -> dict:
 		],
 	)
 
-	# Get available options for add-ons (for preference management)
 	event_add_ons = frappe.db.get_all(
 		"Ticket Add-on",
 		filters={"event": ticket_doc.event, "user_selects_option": True},
@@ -1005,7 +892,6 @@ def get_ticket_details(ticket_id: str) -> dict:
 				event_add_on.options.split("\n") if event_add_on.options else []
 			)
 
-	# Enhance add-ons data with options - include all add-ons but pass user_selects_option flag
 	enhanced_add_ons = []
 	for add_on in add_ons:
 		add_on_data = {
@@ -1023,11 +909,9 @@ def get_ticket_details(ticket_id: str) -> dict:
 	details.add_ons = enhanced_add_ons
 	details.event = frappe.get_cached_doc("Buzz Event", ticket_doc.event)
 
-	# Only include booking information if the current user is the owner of the booking
 	booking_doc = None
 	if ticket_doc.booking:
 		booking_doc = frappe.get_cached_doc("Event Booking", ticket_doc.booking)
-		# Check if current user is the owner of the booking
 		if booking_doc.owner == frappe.session.user:
 			details.booking = booking_doc
 		else:
@@ -1046,7 +930,6 @@ def get_ticket_details(ticket_id: str) -> dict:
 		can_request_cancellation(details.event.name) if details.event else {"can_request_cancellation": False}
 	)
 
-	# Get Zoom webinar join URL if applicable
 	details.zoom_join_url = None
 	if hasattr(ticket_doc, "zoom_webinar_registration") and ticket_doc.zoom_webinar_registration:
 		zoom_registration = frappe.db.get_value(
@@ -1064,40 +947,31 @@ def get_ticket_details(ticket_id: str) -> dict:
 
 @frappe.whitelist()
 def create_cancellation_request(booking_id: str, ticket_ids: list | None = None) -> dict:
-	"""Create a cancellation request for a booking and optionally specific tickets."""
-	# Get booking details
 	booking_doc = frappe.get_cached_doc("Event Booking", booking_id)
 
-	# Check permission - allow booking user or users with write permission
 	if booking_doc.user != frappe.session.user and not frappe.has_permission(
 		"Event Booking", "write", booking_doc
 	):
 		frappe.throw(frappe._("Not permitted to request cancellation for this booking."))
 
-	# Check if cancellation request is allowed for this event
 	if not is_cancellation_request_allowed(booking_doc.event):
 		frappe.throw("Cancellation requests are no longer allowed for this event.")
 
-	# Check if a cancellation request already exists for this booking
 	existing_request = frappe.db.exists(
 		"Ticket Cancellation Request", {"booking": booking_id, "docstatus": 0}
 	)
 	if existing_request:
 		frappe.throw("A cancellation request already exists for this booking.")
 
-	# Determine if this is a full booking cancellation
 	all_tickets = frappe.db.get_all("Event Ticket", filters={"booking": booking_id}, fields=["name"])
 	cancel_full_booking = not ticket_ids or len(ticket_ids) == len(all_tickets)
 
-	# Create the cancellation request
 	cancellation_request = frappe.new_doc("Ticket Cancellation Request")
 	cancellation_request.booking = booking_id
 	cancellation_request.cancel_full_booking = cancel_full_booking
 
-	# If not full booking cancellation, add specific tickets to the child table
 	if not cancel_full_booking and ticket_ids:
 		for ticket_id in ticket_ids:
-			# Verify ticket belongs to this booking
 			ticket_booking = frappe.db.get_value("Event Ticket", ticket_id, "booking")
 			if ticket_booking != booking_id:
 				frappe.throw(f"Ticket {ticket_id} does not belong to booking {booking_id}")
@@ -1107,9 +981,8 @@ def create_cancellation_request(booking_id: str, ticket_ids: list | None = None)
 	cancellation_request.insert(ignore_permissions=True)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def get_user_info() -> dict:
-	"""Get basic information about the logged-in user."""
 	if frappe.session.user == "Guest":
 		return {"is_logged_in": False}
 
@@ -1145,20 +1018,17 @@ def validate_ticket_for_checkin(ticket_id: str) -> dict:
 		frappe.get_cached_doc("Event Ticket Type", ticket_doc.ticket_type) if ticket_doc.ticket_type else None
 	)
 
-	# Check if ticket is already checked in today
 	checkin_date = frappe.utils.today()
 	existing_checkin = frappe.db.exists("Event Check In", {"ticket": ticket_id, "date": checkin_date})
 
 	if existing_checkin:
 		checkin_doc = frappe.get_doc("Event Check In", existing_checkin)
-		# Format the check-in time for display
 		formatted_checkin_time = (
 			format_date(checkin_doc.creation) + " at " + format_time(checkin_doc.creation)
 		)
 
 		frappe.throw(_("This ticket was already checked in today ({0}).").format(formatted_checkin_time))
 
-	# Get add-ons
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on Value",
 		filters={"parent": ticket_id},
@@ -1216,14 +1086,11 @@ def get_payment_details_for_ticket(ticket_id: str) -> dict | None:
 
 @frappe.whitelist()
 def checkin_ticket(ticket_id: str) -> dict:
-	"""Check in a ticket for today."""
 	frappe.only_for("Frontdesk Manager", True)
 
-	# Validate the ticket for check-in
 	checkin_date = frappe.utils.today()
 	validation_result = validate_ticket_for_checkin(ticket_id)
 
-	# Create check-in record
 	checkin_doc = frappe.new_doc("Event Check In")
 	checkin_doc.ticket = ticket_id
 	checkin_doc.date = checkin_date
@@ -1244,9 +1111,8 @@ def checkin_ticket(ticket_id: str) -> dict:
 	}
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def get_enabled_languages():
-	"""Get all enabled languages from the Language doctype."""
 	languages = frappe.get_all(
 		"Language",
 		filters={"enabled": 1},
@@ -1258,14 +1124,13 @@ def get_enabled_languages():
 
 @frappe.whitelist()
 def update_user_language(language_code: str):
-	"""Update the current user's preferred language."""
 	if not frappe.db.exists("Language", {"language_code": language_code}):
 		frappe.throw(_("Invalid language"))
 
 	frappe.db.set_value("User", frappe.session.user, "language", language_code)
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def get_translations():
 	if frappe.session.user != "Guest":
 		language = frappe.db.get_value("User", frappe.session.user, "language")
@@ -1279,7 +1144,7 @@ def has_app_permission():
 	return True
 
 
-@frappe.whitelist(allow_guest=True)
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
 def validate_coupon(coupon_code: str, event: str, user_email: str | None = None) -> dict:
 	event_doc = frappe.get_cached_doc("Buzz Event", event)
 	if frappe.session.user == "Guest" and not event_doc.allow_guest_booking:
@@ -1298,8 +1163,6 @@ def validate_coupon(coupon_code: str, event: str, user_email: str | None = None)
 	if not is_available:
 		return {"valid": False, "error": error}
 
-	# For guest users, use provided email for per-user limit check
-	# Otherwise all guests would share the same "Guest" user counter
 	if frappe.session.user == "Guest":
 		check_user = user_email.lower().strip() if user_email else None
 	else:
@@ -1333,7 +1196,6 @@ def validate_coupon(coupon_code: str, event: str, user_email: str | None = None)
 
 @frappe.whitelist()
 def get_campaign_details(campaign: str):
-	"""Get campaign details for the register interest page."""
 	if not frappe.db.exists("Buzz Campaign", campaign):
 		frappe.throw(_("Campaign not found"), frappe.DoesNotExistError)
 
@@ -1351,7 +1213,6 @@ def get_campaign_details(campaign: str):
 
 @frappe.whitelist()
 def register_campaign_interest(campaign: str):
-	"""Register user interest in a campaign by creating a CRM Lead."""
 	if frappe.session.user == "Guest":
 		frappe.throw(_("Please login to register your interest"))
 
@@ -1363,11 +1224,9 @@ def register_campaign_interest(campaign: str):
 
 	campaign_doc = frappe.get_cached_doc("Buzz Campaign", campaign)
 
-	# Get user details
 	user = frappe.get_cached_doc("User", frappe.session.user)
 	first_name = user.first_name or user.full_name or frappe.session.user.split("@")[0]
 
-	# Check if user already registered for this campaign
 	existing_lead = frappe.db.exists(
 		"CRM Lead",
 		{"email": frappe.session.user, "buzz_campaign": campaign},
@@ -1375,7 +1234,6 @@ def register_campaign_interest(campaign: str):
 	if existing_lead:
 		frappe.throw(_("You have already registered for this campaign"))
 
-	# Check if user has a ticket for today's event (if campaign has an event linked)
 	ticket = None
 	if campaign_doc.event:
 		ticket = frappe.db.get_value(
@@ -1388,7 +1246,6 @@ def register_campaign_interest(campaign: str):
 			"name",
 		)
 
-	# Create CRM Lead
 	lead = frappe.get_doc(
 		{
 			"doctype": "CRM Lead",

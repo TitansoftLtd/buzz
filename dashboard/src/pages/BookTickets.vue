@@ -45,22 +45,10 @@
 				}}</Button>
 			</div>
 		</div>
-		<div
+		<LoginRequired
 			v-else-if="!canAccessBookingPage && !eventBookingResource.loading"
-			class="flex flex-col items-center justify-center py-16 px-4"
-		>
-			<div class="text-center max-w-md">
-				<h2 class="text-xl font-semibold text-ink-gray-8 mb-2">
-					{{ __("Login Required") }}
-				</h2>
-				<p class="text-ink-gray-6 mb-6">
-					{{ __("Please log in to book tickets for this event.") }}
-				</p>
-				<Button variant="solid" size="lg" @click="redirectToLogin">{{
-					__("Log In")
-				}}</Button>
-			</div>
-		</div>
+			:message="__('Please log in to book tickets for this event.')"
+		/>
 		<div v-else>
 			<BookingForm
 				v-if="eventBookingData.availableAddOns && eventBookingData.availableTicketTypes"
@@ -79,8 +67,8 @@
 </template>
 
 <script setup>
+import LoginRequired from "@/components/LoginRequired.vue";
 import { session } from "@/data/session";
-import { redirectToLogin } from "@/utils/index";
 import { Spinner, createResource } from "frappe-ui";
 import { computed, reactive, ref } from "vue";
 import BookingForm from "../components/BookingForm.vue";

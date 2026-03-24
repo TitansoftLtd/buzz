@@ -22,6 +22,13 @@ const routes: RouteRecordRaw[] = [
 		component: () => import("@/pages/BookTickets.vue"),
 	},
 	{
+		path: "/events/:eventRoute/forms/:formRoute",
+		props: true,
+		name: "custom-form",
+		meta: { isPublic: true },
+		component: () => import("@/pages/CustomFormPage.vue"),
+	},
+	{
 		path: "/register-interest/:campaign",
 		props: true,
 		name: "register-interest",
