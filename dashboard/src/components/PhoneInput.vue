@@ -106,7 +106,7 @@ function onNumberInput(num) {
 }
 
 createResource({
-	url: "buzz.api.get_dial_codes",
+	url: "buzz.api.forms.get_dial_codes",
 	auto: true,
 	onSuccess: (data) => {
 		dialCodesData.value = data;

@@ -21,6 +21,11 @@
 			</div>
 		</div>
 
+		<LoginRequired
+			v-else-if="loginRequired"
+			:message="__('Please log in to submit this form.')"
+		/>
+
 		<div v-else-if="formData?.closed" class="text-center">
 			<div class="bg-surface-amber-1 border border-outline-amber-1 rounded-lg p-8">
 				<LucideAlertCircle class="w-16 h-16 text-ink-amber-3 mx-auto mb-4" />
@@ -152,6 +157,8 @@
 import CustomFieldInput from "@/components/CustomFieldInput.vue";
 import CustomFieldsSection from "@/components/CustomFieldsSection.vue";
 import EventDetailsHeader from "@/components/EventDetailsHeader.vue";
+import LoginRequired from "@/components/LoginRequired.vue";
+import { sessionUser } from "@/data/session";
 import { Button, Dialog, Spinner, createResource, toast } from "frappe-ui";
 import { marked } from "marked";
 import { computed, reactive, ref } from "vue";
@@ -174,6 +181,7 @@ const formData = ref(null);
 const formValues = reactive({});
 const customFieldValues = ref({});
 const submitted = ref(false);
+const loginRequired = ref(false);
 const loadError = ref(null);
 
 const tableData = reactive({});
@@ -247,13 +255,17 @@ function saveTableRow() {
 }
 
 const formDataResource = createResource({
-	url: "buzz.api.get_custom_form_data",
+	url: "buzz.api.forms.get_custom_form_data",
 	params: {
 		event_route: props.eventRoute,
 		form_route: props.formRoute,
 	},
 	auto: true,
 	onSuccess: (data) => {
+		if (!data.allow_guest_submission && !sessionUser()) {
+			loginRequired.value = true;
+			return;
+		}
 		formData.value = data;
 		for (const field of data.form_fields || []) {
 			if (field.default) {
@@ -267,7 +279,7 @@ const formDataResource = createResource({
 });
 
 const submitResource = createResource({
-	url: "buzz.api.submit_custom_form",
+	url: "buzz.api.forms.submit_custom_form",
 	onSuccess: () => {
 		submitted.value = true;
 	},

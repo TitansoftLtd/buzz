@@ -308,7 +308,7 @@ test.describe("Custom Form Edge Cases", () => {
 	});
 
 	test("should return error for invalid form route via API", async ({ request }) => {
-		const result = await callMethod(request, "buzz.api.get_custom_form_data", {
+		const result = await callMethod(request, "buzz.api.forms.get_custom_form_data", {
 			event_route: testEventRoute,
 			form_route: "invalid-route",
 		}).catch((err: Error) => err);
