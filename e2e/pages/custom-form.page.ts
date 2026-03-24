@@ -11,7 +11,7 @@ export class CustomFormPage {
 	constructor(page: Page) {
 		this.page = page;
 		this.form = page.locator("form");
-		this.submitButton = page.locator('button[type="submit"]');
+		this.submitButton = page.locator('button[type="submit"]').filter({ hasText: /^Submit$/ });
 		this.successBanner = page.locator(".bg-surface-green-1");
 		this.closedBanner = page.locator(".bg-surface-orange-1");
 		this.errorBanner = page.locator(".bg-surface-red-1");
