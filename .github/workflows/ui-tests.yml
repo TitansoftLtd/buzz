@@ -113,19 +113,7 @@ jobs:
 
       - name: Create Test User
         working-directory: /home/runner/frappe-bench
-        run: |
-          bench --site buzz.test execute "
-          import frappe
-          frappe.get_doc({
-            'doctype': 'User',
-            'email': 'testuser@buzz.test',
-            'first_name': 'Test',
-            'send_welcome_email': 0,
-            'new_password': 'Test@123',
-            'roles': [{'role': 'System Manager'}]
-          }).insert(ignore_permissions=True)
-          frappe.db.commit()
-          "
+        run: bench --site buzz.test add-user testuser@buzz.test --first-name Test --last-name User --password Test@123 --add-role "System Manager"
 
       - name: Start Frappe Server
         working-directory: /home/runner/frappe-bench
