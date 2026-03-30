@@ -54,6 +54,6 @@ test.describe("Authentication - Fresh state", () => {
 		await page.goto("/dashboard");
 		await page.waitForLoadState("networkidle");
 
-		await expect(page.getByRole("button", { name: "Log In" })).toBeVisible();
+		await expect(page.getByRole("button", { name: "Log In" }).first()).toBeVisible();
 	});
 });
