@@ -242,15 +242,6 @@ def get_event_booking_data(event_route: str) -> dict:
 	else:
 		data.event_details = event_doc
 
-	if is_guest and not event_doc.allow_guest_booking:
-		data.available_ticket_types = []
-		data.available_add_ons = []
-		data.tax_settings = {}
-		data.custom_fields = []
-		data.payment_gateways = []
-		data.guest_booking_disabled = True
-		return data
-
 	available_ticket_types = []
 	published_ticket_types = frappe.db.get_all(
 		"Event Ticket Type", filters={"is_published": True, "event": event_doc.name}, pluck="name"
@@ -259,8 +250,32 @@ def get_event_booking_data(event_route: str) -> dict:
 		tt = frappe.get_cached_doc("Event Ticket Type", ticket_type)
 		if tt.are_tickets_available(1):
 			available_ticket_types.append(tt)
-	data.available_ticket_types = available_ticket_types
+
+	if is_guest:
+		data.available_ticket_types = [
+			{
+				"name": tt.name,
+				"title": tt.title,
+				"price": tt.price,
+				"currency": tt.currency,
+				"event": tt.event,
+				"max_tickets_available": tt.max_tickets_available,
+				"remaining_tickets": tt.remaining_tickets,
+			}
+			for tt in available_ticket_types
+		]
+	else:
+		data.available_ticket_types = available_ticket_types
 	data.registrations_full = not available_ticket_types and not data.registrations_closed
+
+	if is_guest and not event_doc.allow_guest_booking:
+		data.available_ticket_types = []
+		data.available_add_ons = []
+		data.tax_settings = {}
+		data.custom_fields = []
+		data.payment_gateways = []
+		data.guest_booking_disabled = True
+		return data
 
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on", filters={"event": event_doc.name, "enabled": 1}, fields=["*"], order_by="title"
