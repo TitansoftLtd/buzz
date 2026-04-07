@@ -584,6 +584,9 @@ const createNewAttendee = () => {
 		first_name: "",
 		last_name: "",
 		email: "",
+		phone_number: "",
+		organization: "",
+		expectations: "",
 		// Use default ticket type from event details, or first available
 		ticket_type: getDefaultTicketType(),
 		add_ons: {},

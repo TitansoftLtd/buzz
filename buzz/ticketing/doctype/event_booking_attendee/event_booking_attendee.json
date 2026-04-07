@@ -13,6 +13,9 @@
   "custom_fields",
   "column_break_xmfr",
   "email",
+  "phone_number",
+  "organization",
+  "expectations",
   "amount",
   "currency",
   "add_ons",
@@ -50,6 +53,23 @@
    "label": "Email",
    "options": "Email",
    "reqd": 1
+  },
+  {
+   "fieldname": "phone_number",
+   "fieldtype": "Data",
+   "label": "Phone Number",
+   "options": "Phone",
+   "reqd": 1
+  },
+  {
+   "fieldname": "organization",
+   "fieldtype": "Data",
+   "label": "Organization"
+  },
+  {
+   "fieldname": "expectations",
+   "fieldtype": "Small Text",
+   "label": "Expectations"
   },
   {
    "fieldname": "ticket_type",

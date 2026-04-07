@@ -20,7 +20,7 @@
 			{{ __("Attendee") }} #{{ index + 1 }}
 		</h4>
 
-		<!-- Name, Email and Custom Fields -->
+		<!-- Name, Email, Phone and Custom Fields -->
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-end">
 			<FormControl
 				v-model="attendee.first_name"
@@ -42,6 +42,19 @@
 				:placeholder="__('Enter email address')"
 				required
 				type="email"
+			/>
+			<FormControl
+				v-model="attendee.phone_number"
+				:label="__('Phone Number')"
+				:placeholder="__('Enter phone number')"
+				required
+				type="text"
+			/>
+			<FormControl
+				v-model="attendee.organization"
+				:label="__('Organization')"
+				:placeholder="__('Enter organization name')"
+				type="text"
 			/>
 
 			<!-- Ticket Type -->
@@ -73,6 +86,17 @@
 					@update:model-value="updateCustomFieldValue(field.fieldname, $event)"
 				/>
 			</template>
+		</div>
+
+		<!-- Expectations -->
+		<div class="mb-4">
+			<FormControl
+				v-model="attendee.expectations"
+				:label="__('Expectations')"
+				:placeholder="__('What do you expect from this event?')"
+				type="textarea"
+				:rows="2"
+			/>
 		</div>
 
 		<!-- Add-ons -->
