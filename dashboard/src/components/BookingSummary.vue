@@ -35,6 +35,13 @@
 						{{ ticket.count }} x {{ formatPriceOrFree(ticket.price, ticket.currency) }}
 					</span>
 					<span v-else class="text-sm text-ink-gray-5">x {{ ticket.count }}</span>
+					<span
+						v-if="ticket.remainingTickets >= 0"
+						class="text-xs"
+						:class="ticket.count > ticket.remainingTickets ? 'text-red-600 font-medium' : 'text-ink-gray-4'"
+					>
+						{{ __("Only {0} tickets available for {1}", [ticket.remainingTickets, __(ticket.title)]) }}
+					</span>
 				</div>
 				<span v-if="freeTicketType === name && freeTicketCount > 0" class="font-medium">
 					{{
