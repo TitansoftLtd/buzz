@@ -37,10 +37,11 @@
 					<span v-else class="text-sm text-ink-gray-5">x {{ ticket.count }}</span>
 					<span
 						v-if="ticket.remainingTickets >= 0"
-						class="text-xs"
+						class="text-xs flex items-center gap-1"
 						:class="ticket.count > ticket.remainingTickets ? 'text-red-600 font-medium' : 'text-ink-gray-4'"
 					>
-						{{ __("Only {0} tickets available for {1}", [ticket.remainingTickets, __(ticket.title)]) }}
+						<LucideTicket class="h-3 w-3" />
+						{{ __("Only {0} tickets available", [ticket.remainingTickets]) }}
 					</span>
 				</div>
 				<span v-if="freeTicketType === name && freeTicketCount > 0" class="font-medium">
@@ -174,6 +175,7 @@
 
 <script setup>
 import { formatPriceOrFree } from "@/utils/currency";
+import LucideTicket from "~icons/lucide/ticket";
 
 defineProps({
 	summary: {
