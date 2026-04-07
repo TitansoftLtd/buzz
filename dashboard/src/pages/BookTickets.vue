@@ -45,6 +45,36 @@
 				}}</Button>
 			</div>
 		</div>
+		<div
+			v-else-if="registrationsFull"
+			class="flex flex-col items-center justify-center py-16 px-4"
+		>
+			<div class="text-center max-w-md">
+				<img
+					v-if="eventBookingData.eventDetails?.banner_image"
+					:src="eventBookingData.eventDetails.banner_image"
+					:alt="eventBookingData.eventDetails.title"
+					class="w-full rounded-lg mb-6 object-cover max-h-48"
+				/>
+				<div
+					class="mx-auto mb-4 flex h-12 w-12 items-center justify-center rounded-full bg-red-50"
+				>
+					<LucideTicketX class="h-6 w-6 text-red-500" />
+				</div>
+				<h2 class="text-xl font-semibold text-ink-gray-8 mb-2">
+					{{ __("Event Full") }}
+				</h2>
+				<p class="text-ink-gray-6 mb-1">
+					{{ __("All slots for this event are fully booked.") }}
+				</p>
+				<p class="text-sm text-ink-gray-5 mb-6">
+					{{ __("Check back later as spots may open up from cancellations.") }}
+				</p>
+				<Button variant="solid" size="lg" @click="goToHome">{{
+					__("Browse Other Events")
+				}}</Button>
+			</div>
+		</div>
 		<div v-else>
 			<BookingForm
 				v-if="eventBookingData.availableAddOns && eventBookingData.availableTicketTypes"
@@ -67,6 +97,7 @@ import { session } from "@/data/session";
 import { Spinner, createResource } from "frappe-ui";
 import { computed, reactive, ref } from "vue";
 import BookingForm from "../components/BookingForm.vue";
+import LucideTicketX from "~icons/lucide/ticket-x";
 
 const eventBookingData = reactive({
 	availableAddOns: null,
@@ -80,6 +111,7 @@ const eventBookingData = reactive({
 
 const eventNotFound = ref(false);
 const registrationsClosed = ref(false);
+const registrationsFull = ref(false);
 
 const props = defineProps({
 	eventRoute: {
@@ -114,6 +146,7 @@ const eventBookingResource = createResource({
 		eventBookingData.paymentGateways = data.payment_gateways || [];
 		eventBookingData.offlineMethods = data.offline_methods || [];
 		registrationsClosed.value = data.registrations_closed || false;
+		registrationsFull.value = data.registrations_full || false;
 	},
 	onError: (error) => {
 		if (error.message?.includes("DoesNotExistError")) {

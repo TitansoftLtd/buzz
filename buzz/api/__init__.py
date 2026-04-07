@@ -260,6 +260,7 @@ def get_event_booking_data(event_route: str) -> dict:
 		if tt.are_tickets_available(1):
 			available_ticket_types.append(tt)
 	data.available_ticket_types = available_ticket_types
+	data.registrations_full = not available_ticket_types and not data.registrations_closed
 
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on", filters={"event": event_doc.name, "enabled": 1}, fields=["*"], order_by="title"
