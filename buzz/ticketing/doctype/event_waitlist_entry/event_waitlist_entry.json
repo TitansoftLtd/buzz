@@ -10,7 +10,12 @@
   "email",
   "column_break_info",
   "phone_number",
-  "organization"
+  "organization",
+  "notification_section",
+  "status",
+  "column_break_notify",
+  "last_notified_on",
+  "notified_for_event"
  ],
  "fields": [
   {
@@ -45,11 +50,43 @@
    "fieldtype": "Data",
    "label": "Organization",
    "reqd": 1
+  },
+  {
+   "fieldname": "notification_section",
+   "fieldtype": "Section Break",
+   "label": "Notification History"
+  },
+  {
+   "default": "New",
+   "fieldname": "status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Status",
+   "options": "New\nNotified\nConverted",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_notify",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "last_notified_on",
+   "fieldtype": "Datetime",
+   "label": "Last Notified On",
+   "read_only": 1
+  },
+  {
+   "fieldname": "notified_for_event",
+   "fieldtype": "Link",
+   "label": "Last Notified For Event",
+   "options": "Buzz Event",
+   "read_only": 1
   }
  ],
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2026-04-15 10:00:00.000000",
+ "modified": "2026-04-15 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Event Waitlist Entry",
