@@ -54,6 +54,7 @@
 				v-model="attendee.organization"
 				:label="__('Organization')"
 				:placeholder="__('Enter organization name')"
+				required
 				type="text"
 			/>
 

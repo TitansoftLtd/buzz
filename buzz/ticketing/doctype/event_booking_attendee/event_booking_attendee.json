@@ -64,7 +64,8 @@
   {
    "fieldname": "organization",
    "fieldtype": "Data",
-   "label": "Organization"
+   "label": "Organization",
+   "reqd": 1
   },
   {
    "fieldname": "expectations",
