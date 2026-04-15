@@ -1276,3 +1276,31 @@ def register_campaign_interest(campaign: str):
 		}
 	)
 	lead.insert(ignore_permissions=True)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(key="ip", limit=10, seconds=3600)
+def register_event_waitlist(
+	full_name: str, email: str, phone_number: str, organization: str
+) -> dict:
+	"""Register interest to be notified about future events."""
+	validate_email_address(email, throw=True)
+
+	existing = frappe.db.exists(
+		"Event Waitlist Entry", {"email": email.strip().lower()}
+	)
+	if existing:
+		frappe.throw(_("You are already registered"))
+
+	entry = frappe.get_doc(
+		{
+			"doctype": "Event Waitlist Entry",
+			"full_name": full_name.strip(),
+			"email": email.strip().lower(),
+			"phone_number": phone_number.strip(),
+			"organization": organization.strip(),
+		}
+	)
+	entry.insert(ignore_permissions=True)
+
+	return {"success": True}
