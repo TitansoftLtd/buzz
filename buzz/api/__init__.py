@@ -1304,3 +1304,39 @@ def register_event_waitlist(
 	entry.insert(ignore_permissions=True)
 
 	return {"success": True}
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+def confirm_attendance(token: str):
+	"""Mark a ticket as Confirmed via a one-time token. Redirects to a confirmation page."""
+	if not token:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket_name = frappe.db.get_value("Event Ticket", {"confirmation_token": token}, "name")
+	if not ticket_name:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket = frappe.get_doc("Event Ticket", ticket_name)
+
+	if ticket.confirmation_status == "Confirmed":
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=already"
+		return
+
+	if ticket.docstatus != 1:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket.confirmation_status = "Confirmed"
+	ticket.confirmed_at = now_datetime()
+	ticket.flags.ignore_permissions = True
+	ticket.save()
+	frappe.db.commit()
+
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = "/dashboard?confirmation=success"
