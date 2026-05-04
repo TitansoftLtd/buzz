@@ -348,6 +348,39 @@ frappe.ui.form.on("Buzz Event", {
 			);
 		}
 
+		// Send Confirmation Emails button (only when confirmation is enabled)
+		if (!frm.is_new() && frm.doc.require_attendance_confirmation) {
+			frm.add_custom_button(
+				__("Send Confirmation Emails"),
+				function () {
+					frappe.confirm(
+						__(
+							"Send attendance confirmation emails to all unconfirmed attendees who haven't been emailed yet?"
+						),
+						function () {
+							frappe.call({
+								method: "buzz.ticketing.attendance.trigger_confirmation_emails",
+								args: { event: frm.doc.name },
+								freeze: true,
+								freeze_message: __("Sending confirmation emails..."),
+								callback(r) {
+									if (r.message) {
+										frappe.show_alert({
+											message: __("Sent confirmation email to {0} attendees", [
+												r.message.sent,
+											]),
+											indicator: r.message.sent ? "green" : "orange",
+										});
+									}
+								},
+							});
+						}
+					);
+				},
+				__("Actions")
+			);
+		}
+
 		frm.trigger("add_zoom_custom_actions");
 	},
 

@@ -16,6 +16,13 @@
   "attendee_email",
   "ticket_type",
   "qr_code",
+  "confirmation_section",
+  "confirmation_status",
+  "confirmed_at",
+  "column_break_confirm",
+  "confirmation_token",
+  "confirmation_sent_at",
+  "confirmation_reminder_sent_at",
   "section_break_ijdn",
   "additional_fields",
   "section_break_cgvb",
@@ -120,6 +127,56 @@
    "fieldtype": "Link",
    "label": "Coupon Used ",
    "options": "Bulk Ticket Coupon"
+  },
+  {
+   "fieldname": "confirmation_section",
+   "fieldtype": "Section Break",
+   "label": "Attendance Confirmation"
+  },
+  {
+   "allow_on_submit": 1,
+   "default": "Pending",
+   "fieldname": "confirmation_status",
+   "fieldtype": "Select",
+   "in_list_view": 1,
+   "in_standard_filter": 1,
+   "label": "Confirmation Status",
+   "options": "Pending\nConfirmed\nDeclined",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "confirmed_at",
+   "fieldtype": "Datetime",
+   "label": "Confirmed At",
+   "read_only": 1
+  },
+  {
+   "fieldname": "column_break_confirm",
+   "fieldtype": "Column Break"
+  },
+  {
+   "fieldname": "confirmation_token",
+   "fieldtype": "Data",
+   "hidden": 1,
+   "label": "Confirmation Token",
+   "no_copy": 1,
+   "read_only": 1,
+   "unique": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "confirmation_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Confirmation Email Sent At",
+   "read_only": 1
+  },
+  {
+   "allow_on_submit": 1,
+   "fieldname": "confirmation_reminder_sent_at",
+   "fieldtype": "Datetime",
+   "label": "Reminder Sent At",
+   "read_only": 1
   },
   {
    "fieldname": "section_break_ijdn",

@@ -598,6 +598,9 @@ const createNewAttendee = () => {
 		first_name: "",
 		last_name: "",
 		email: "",
+		phone_number: "",
+		organization: "",
+		expectations: "",
 		// Use default ticket type from event details, or first available
 		ticket_type: getDefaultTicketType(),
 		add_ons: {},
@@ -622,6 +625,23 @@ const createNewAttendee = () => {
 
 const addAttendee = () => {
 	const newAttendee = createNewAttendee();
+	const ticketType = newAttendee.ticket_type;
+	if (ticketType && ticketTypesMap.value[ticketType]) {
+		const ticketInfo = ticketTypesMap.value[ticketType];
+		if (ticketInfo.remaining_tickets >= 0) {
+			const currentCount = attendees.value.filter(
+				(a) => String(a.ticket_type) === String(ticketType)
+			).length;
+			if (currentCount >= ticketInfo.remaining_tickets) {
+				toast({
+					title: __("Limited Availability"),
+					text: __("Only {0} tickets available for {1}", [ticketInfo.remaining_tickets, ticketInfo.title]),
+					icon: "alert-triangle",
+					iconClasses: "text-orange-500",
+				});
+			}
+		}
+	}
 	attendees.value.push(newAttendee);
 };
 
@@ -644,6 +664,7 @@ const summary = computed(() => {
 					price: ticketInfo.price,
 					title: ticketInfo.title,
 					currency: ticketInfo.currency,
+					remainingTickets: ticketInfo.remaining_tickets,
 				};
 			}
 			summaryData.tickets[ticketType].count++;

@@ -41,6 +41,11 @@
   "guest_verification_method",
   "auto_closures_section",
   "registrations_close_at",
+  "attendance_confirmation_section",
+  "require_attendance_confirmation",
+  "confirmation_deadline",
+  "column_break_attendance",
+  "send_confirmation_reminder_days_before",
   "section_break_kwlt",
   "featured_speakers",
   "payments_tab",
@@ -491,6 +496,39 @@
    "fieldname": "registrations_close_at",
    "fieldtype": "Datetime",
    "label": "Registrations Close At"
+  },
+  {
+   "fieldname": "attendance_confirmation_section",
+   "fieldtype": "Section Break",
+   "label": "Attendance Confirmation"
+  },
+  {
+   "default": "0",
+   "description": "When enabled, attendees will be emailed asking to confirm attendance. Unconfirmed tickets will be auto-cancelled after the deadline.",
+   "fieldname": "require_attendance_confirmation",
+   "fieldtype": "Check",
+   "label": "Require Attendance Confirmation"
+  },
+  {
+   "depends_on": "require_attendance_confirmation",
+   "description": "Tickets not confirmed by this date will be auto-cancelled.",
+   "fieldname": "confirmation_deadline",
+   "fieldtype": "Date",
+   "label": "Confirmation Deadline",
+   "mandatory_depends_on": "require_attendance_confirmation"
+  },
+  {
+   "fieldname": "column_break_attendance",
+   "fieldtype": "Column Break"
+  },
+  {
+   "default": "2",
+   "depends_on": "require_attendance_confirmation",
+   "description": "Send a reminder N days before the deadline.",
+   "fieldname": "send_confirmation_reminder_days_before",
+   "fieldtype": "Int",
+   "label": "Send Reminder (days before deadline)",
+   "non_negative": 1
   },
   {
    "fieldname": "custom_forms_tab",

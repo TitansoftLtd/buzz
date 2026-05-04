@@ -250,7 +250,32 @@ def get_event_booking_data(event_route: str) -> dict:
 		tt = frappe.get_cached_doc("Event Ticket Type", ticket_type)
 		if tt.are_tickets_available(1):
 			available_ticket_types.append(tt)
-	data.available_ticket_types = available_ticket_types
+
+	if is_guest:
+		data.available_ticket_types = [
+			{
+				"name": tt.name,
+				"title": tt.title,
+				"price": tt.price,
+				"currency": tt.currency,
+				"event": tt.event,
+				"max_tickets_available": tt.max_tickets_available,
+				"remaining_tickets": tt.remaining_tickets,
+			}
+			for tt in available_ticket_types
+		]
+	else:
+		data.available_ticket_types = available_ticket_types
+	data.registrations_full = not available_ticket_types and not data.registrations_closed
+
+	if is_guest and not event_doc.allow_guest_booking:
+		data.available_ticket_types = []
+		data.available_add_ons = []
+		data.tax_settings = {}
+		data.custom_fields = []
+		data.payment_gateways = []
+		data.guest_booking_disabled = True
+		return data
 
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on", filters={"event": event_doc.name, "enabled": 1}, fields=["*"], order_by="title"
@@ -444,6 +469,9 @@ def process_booking(
 			"first_name": first_name,
 			"last_name": last_name,
 			"email": attendee.get("email"),
+			"phone_number": (attendee.get("phone_number") or "").strip() or None,
+			"organization": (attendee.get("organization") or "").strip() or None,
+			"expectations": (attendee.get("expectations") or "").strip() or None,
 			"ticket_type": attendee.get("ticket_type"),
 			"add_ons": add_ons.name if add_ons else None,
 			"custom_fields": custom_fields if custom_fields else None,
@@ -1256,3 +1284,67 @@ def register_campaign_interest(campaign: str):
 		}
 	)
 	lead.insert(ignore_permissions=True)
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+@rate_limit(key="ip", limit=10, seconds=3600)
+def register_event_waitlist(
+	full_name: str, email: str, phone_number: str, organization: str
+) -> dict:
+	"""Register interest to be notified about future events."""
+	validate_email_address(email, throw=True)
+
+	existing = frappe.db.exists(
+		"Event Waitlist Entry", {"email": email.strip().lower()}
+	)
+	if existing:
+		frappe.throw(_("You are already registered"))
+
+	entry = frappe.get_doc(
+		{
+			"doctype": "Event Waitlist Entry",
+			"full_name": full_name.strip(),
+			"email": email.strip().lower(),
+			"phone_number": phone_number.strip(),
+			"organization": organization.strip(),
+		}
+	)
+	entry.insert(ignore_permissions=True)
+
+	return {"success": True}
+
+
+@frappe.whitelist(allow_guest=True)  # nosemgrep: frappe-semgrep-rules.rules.security.guest-whitelisted-method
+def confirm_attendance(token: str):
+	"""Mark a ticket as Confirmed via a one-time token. Redirects to a confirmation page."""
+	if not token:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket_name = frappe.db.get_value("Event Ticket", {"confirmation_token": token}, "name")
+	if not ticket_name:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket = frappe.get_doc("Event Ticket", ticket_name)
+
+	if ticket.confirmation_status == "Confirmed":
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=already"
+		return
+
+	if ticket.docstatus != 1:
+		frappe.local.response["type"] = "redirect"
+		frappe.local.response["location"] = "/dashboard?confirmation=invalid"
+		return
+
+	ticket.confirmation_status = "Confirmed"
+	ticket.confirmed_at = now_datetime()
+	ticket.flags.ignore_permissions = True
+	ticket.save()
+	frappe.db.commit()
+
+	frappe.local.response["type"] = "redirect"
+	frappe.local.response["location"] = "/dashboard?confirmation=success"
