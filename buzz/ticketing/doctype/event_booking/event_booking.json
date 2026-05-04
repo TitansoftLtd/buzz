@@ -32,6 +32,11 @@
   "currency",
   "coupon_code",
   "discount_amount",
+  "billing_details_section",
+  "invoice_requested",
+  "tax_id",
+  "column_break_billing",
+  "billing_address",
   "section_break_sdfp",
   "amended_from",
   "marketing_tab",
@@ -177,6 +182,28 @@
    "read_only": 1
   },
   {
+   "fieldname": "billing_details_section",
+   "fieldtype": "Section Break",
+   "label": "Billing Details"
+  },
+  {
+   "depends_on": "eval:doc.invoice_requested==1",
+   "fieldname": "tax_id",
+   "fieldtype": "Data",
+   "label": "Tax ID"
+  },
+  {
+   "fieldname": "column_break_billing",
+   "fieldtype": "Column Break"
+  },
+  {
+   "depends_on": "eval:doc.invoice_requested==1",
+   "fieldname": "billing_address",
+   "fieldtype": "Small Text",
+   "label": "Billing Address",
+   "mandatory_depends_on": "eval:doc.invoice_requested==1"
+  },
+  {
    "fieldname": "section_break_status",
    "fieldtype": "Section Break",
    "label": "Status"
@@ -224,6 +251,12 @@
    "fieldtype": "Data",
    "label": "Offline Payment Method",
    "read_only": 1
+  },
+  {
+   "default": "0",
+   "fieldname": "invoice_requested",
+   "fieldtype": "Check",
+   "label": "Invoice Requested"
   }
  ],
  "grid_page_length": 50,
@@ -239,7 +272,7 @@
    "link_fieldname": "reference_docname"
   }
  ],
- "modified": "2026-02-05 09:10:22.542973",
+ "modified": "2026-05-03 07:18:23.131237",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Event Booking",

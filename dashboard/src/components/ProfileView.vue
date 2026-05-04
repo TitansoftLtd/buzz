@@ -1,5 +1,5 @@
 <template>
-	<div v-if="profile" class="flex w-full items-center justify-between mb-8">
+	<div v-if="profile" class="flex w-full items-center justify-between mb-3 sm:mb-5">
 		<FileUploader
 			@success="(file) => updateImage(file.file_url)"
 			:validateFile="validateIsImageFile"

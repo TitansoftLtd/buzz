@@ -26,15 +26,20 @@ class EventBooking(Document):
 		additional_fields: DF.Table[AdditionalField]
 		amended_from: DF.Link | None
 		attendees: DF.Table[EventBookingAttendee]
+		billing_address: DF.SmallText | None
 		coupon_code: DF.Link | None
 		currency: DF.Link
 		discount_amount: DF.Currency
 		event: DF.Link
+		invoice_requested: DF.Check
 		naming_series: DF.Literal["B.###"]
 		net_amount: DF.Currency
+		offline_payment_method: DF.Data | None
+		payment_method: DF.Data | None
 		payment_status: DF.Literal["Unpaid", "Paid", "Verification Pending"]
 		status: DF.Literal["Confirmed", "Approval Pending", "Approved", "Rejected"]
 		tax_amount: DF.Currency
+		tax_id: DF.Data | None
 		tax_label: DF.Data | None
 		tax_percentage: DF.Percent
 		total_amount: DF.Currency

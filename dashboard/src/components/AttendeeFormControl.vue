@@ -4,21 +4,22 @@
 		class="bg-surface-white border border-outline-gray-3 rounded-xl p-4 md:p-6 mb-6 shadow-sm relative"
 	>
 		<!-- Remove Button -->
-		<Tooltip :text="__('Remove Attendee')" :hover-delay="0.5">
-			<Button
-				v-if="showRemove"
-				@click="$emit('remove')"
-				type="button"
-				theme="red"
-				class="absolute top-4 right-4"
-				:title="__('Remove attendee')"
-				icon="x"
-			/>
-		</Tooltip>
 
-		<h4 class="text-lg font-semibold text-ink-gray-9 mb-4 border-b pb-2 pr-10">
-			{{ __("Attendee") }} #{{ index + 1 }}
-		</h4>
+		<div class="flex justify-between items-start mb-4 border-b pb-2">
+			<h4 class="text-lg font-semibold text-ink-gray-9">
+				{{ __("Attendee") }} #{{ index + 1 }}
+			</h4>
+
+			<Tooltip :text="__('Remove Attendee')" :hover-delay="0.5">
+				<Button
+					v-if="showRemove"
+					@click="$emit('remove')"
+					type="button"
+					theme="red"
+					icon="x"
+				/>
+			</Tooltip>
+		</div>
 
 		<!-- Name, Email, Phone and Custom Fields -->
 		<div class="grid grid-cols-1 md:grid-cols-2 gap-4 mb-4 items-end">
