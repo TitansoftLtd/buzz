@@ -155,7 +155,7 @@
 </template>
 
 <script setup>
-import { session } from "@/data/session
+import { session } from "@/data/session";
 import { Spinner, createResource } from "frappe-ui";
 import { computed, reactive, ref, watch } from "vue";
 import { FormControl, Spinner, createResource } from "frappe-ui";
