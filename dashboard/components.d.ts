@@ -12,6 +12,7 @@ declare module 'vue' {
     AttendeeFormControl: typeof import('./src/components/AttendeeFormControl.vue')['default']
     BackButton: typeof import('./src/components/common/BackButton.vue')['default']
     BaseCustomEventForm: typeof import('./src/components/BaseCustomEventForm.vue')['default']
+    BillingDetails: typeof import('./src/components/BillingDetails.vue')['default']
     BookingEventInfo: typeof import('./src/components/BookingEventInfo.vue')['default']
     BookingFinancialSummary: typeof import('./src/components/BookingFinancialSummary.vue')['default']
     BookingForm: typeof import('./src/components/BookingForm.vue')['default']

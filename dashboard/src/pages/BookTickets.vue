@@ -155,9 +155,10 @@
 </template>
 
 <script setup>
-import { session } from "@/data/session";
+import { session } from "@/data/session
+import { Spinner, createResource } from "frappe-ui";
+import { computed, reactive, ref, watch } from "vue";
 import { FormControl, Spinner, createResource } from "frappe-ui";
-import { computed, reactive, ref } from "vue";
 import BookingForm from "../components/BookingForm.vue";
 import LucideTicketX from "~icons/lucide/ticket-x";
 import LucideCheckCircle from "~icons/lucide/check-circle";
@@ -252,4 +253,13 @@ const eventBookingResource = createResource({
 		}
 	},
 });
+
+watch(
+	() => session.isLoggedIn,
+	(isLoggedIn) => {
+		if (isLoggedIn) {
+			eventBookingResource.reload();
+		}
+	}
+);
 </script>

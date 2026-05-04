@@ -1,25 +1,42 @@
 <template>
 	<ProfileView />
-	<Tabs as="div" v-model="tabIndex" :tabs="tabs">
-		<template #tab-panel>
-			<div class="py-5">
-				<router-view></router-view>
-			</div>
-		</template>
-	</Tabs>
+
+	<!-- Mobile: Select dropdown for navigation -->
+	<div class="sm:hidden">
+		<FormControl
+			type="select"
+			:modelValue="currentTabRoute"
+			:options="selectOptions"
+			@update:modelValue="onSelectChange"
+		/>
+	</div>
+
+	<!-- Desktop: Tabs for navigation -->
+	<div class="hidden sm:block">
+		<Tabs as="div" v-model="tabIndex" :tabs="tabs">
+			<template #tab-panel>
+				<div></div>
+			</template>
+		</Tabs>
+	</div>
+
+	<div class="py-5">
+		<router-view></router-view>
+	</div>
 </template>
 
 <script setup>
 import ProfileView from "@/components/ProfileView.vue";
 import { Tabs } from "frappe-ui";
-import { ref, watch } from "vue";
-import { useRoute } from "vue-router";
+import { computed, ref, watch } from "vue";
+import { useRoute, useRouter } from "vue-router";
 import LucideCalendarDays from "~icons/lucide/calendar-days";
 import LucideCircleDollarSign from "~icons/lucide/circle-dollar-sign";
 import LucideMegaphone from "~icons/lucide/megaphone";
 import LucideTicket from "~icons/lucide/ticket";
 
 const route = useRoute();
+const router = useRouter();
 
 const tabs = [
 	{
@@ -39,6 +56,20 @@ const tabs = [
 		icon: LucideCircleDollarSign,
 	},
 ];
+
+const selectOptions = tabs.map((tab) => ({
+	label: tab.label,
+	value: tab.route,
+}));
+
+const currentTabRoute = computed(() => {
+	const tab = tabs.find((tab) => route.path.startsWith(tab.route));
+	return tab ? tab.route : tabs[0].route;
+});
+
+function onSelectChange(value) {
+	router.push(value);
+}
 
 // Find the tab index based on current route path
 const getTabIndexFromRoute = () => {

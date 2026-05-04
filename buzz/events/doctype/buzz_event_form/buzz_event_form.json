@@ -1,13 +1,14 @@
 {
  "actions": [],
  "allow_rename": 1,
- "creation": "2026-03-20 00:00:00.000000",
+ "creation": "2026-03-20 00:00:00",
  "doctype": "DocType",
  "editable_grid": 1,
  "engine": "InnoDB",
  "field_order": [
   "form_doctype",
   "route",
+  "copy_to_clipboard",
   "publish",
   "column_break_main",
   "auto_close_at",
@@ -79,13 +80,19 @@
    "fieldname": "closed_message",
    "fieldtype": "Small Text",
    "label": "Closed Message"
+  },
+  {
+   "fieldname": "copy_to_clipboard",
+   "fieldtype": "Button",
+   "in_list_view": 1,
+   "label": "Copy link to clipboard"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-03-20 00:00:00.000000",
+ "modified": "2026-04-14 19:33:17.779162",
  "modified_by": "Administrator",
  "module": "Events",
  "name": "Buzz Event Form",

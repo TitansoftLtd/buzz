@@ -289,6 +289,15 @@ function show_save_as_template_dialog(frm) {
 	dialog.show();
 }
 
+frappe.ui.form.on("Buzz Event Form", {
+	copy_to_clipboard(frm, cdt, cdn) {
+		const row = frappe.get_doc(cdt, cdn);
+		const url = `${window.location.origin}/dashboard/events/${frm.doc.route}/forms/${row.route}`;
+		navigator.clipboard.writeText(url);
+		frappe.show_alert({ message: __("Link copied!"), indicator: "green" });
+	},
+});
+
 frappe.ui.form.on("Buzz Event", {
 	refresh(frm) {
 		frm.fields_dict.time_zone.set_data(getZoomSupportedTimezones());

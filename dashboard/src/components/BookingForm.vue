@@ -171,6 +171,14 @@
 						/>
 					</div>
 
+					<BillingDetails
+						v-if="shouldApplyTax"
+						v-model:invoice-requested="invoiceRequested"
+						v-model:tax-id="taxId"
+						v-model:billing-address="billingAddress"
+						:tax-label="taxLabel"
+					/>
+
 					<AttendeeFormControl
 						v-for="(attendee, index) in attendees"
 						:key="attendee.id"
@@ -217,7 +225,7 @@
 									v-model="couponCode"
 									:placeholder="__('Enter code')"
 									:aria-label="__('Coupon code')"
-									class="flex-1"
+									class="flex-1 uppercase"
 									@keyup.enter="applyCoupon"
 								/>
 								<Button
@@ -401,9 +409,11 @@ import { useLoginDialog } from "@/composables/useLoginDialog";
 import { userResource } from "@/data/user";
 import { formatCurrency, formatPriceOrFree } from "@/utils/currency";
 import { clearBookingCache } from "@/utils/index";
+import BillingDetails from "@/components/BillingDetails.vue";
 import { FormControl, createResource, toast } from "frappe-ui";
 import { computed, nextTick, onMounted, onUnmounted, ref, watch } from "vue";
 import { useRoute, useRouter } from "vue-router";
+import { useRouteQuery } from "@vueuse/router";
 import LucideAlertCircle from "~icons/lucide/alert-circle";
 import LucideCheck from "~icons/lucide/check";
 import LucideCheckCircle from "~icons/lucide/check-circle";
@@ -487,6 +497,9 @@ const {
 	guestLastName,
 	guestEmail,
 	guestPhone,
+	invoiceRequested,
+	taxId,
+	billingAddress,
 } = useBookingFormStorage(props.eventRoute);
 
 const guestFullName = computed(() => `${guestFirstName.value} ${guestLastName.value}`.trim());
@@ -518,7 +531,8 @@ const activeOfflineCustomFields = computed(() => {
 	return selectedOfflineMethod.value.custom_fields || [];
 });
 
-// Coupon state
+// Coupon state — `appliedCouponQuery` keeps the URL in sync with the applied coupon
+const appliedCouponQuery = useRouteQuery("coupon", null);
 const couponCode = ref("");
 const couponApplied = ref(false);
 const couponError = ref("");
@@ -843,6 +857,13 @@ onMounted(async () => {
 
 		attendees.value = [newAttendee];
 	}
+
+	// Pre-fill and auto-apply coupon from ?coupon= query param
+	const initialCoupon = appliedCouponQuery.value;
+	if (typeof initialCoupon === "string" && initialCoupon.trim() && !couponApplied.value) {
+		couponCode.value = initialCoupon.trim().toUpperCase();
+		await applyCoupon();
+	}
 });
 
 // Ensure existing attendees have proper add-on structure when availableAddOns changes
@@ -983,16 +1004,20 @@ function sendOtpForVerification() {
 
 // --- COUPON FUNCTIONS ---
 async function applyCoupon() {
-	if (!couponCode.value.trim()) {
+	const normalizedCode = couponCode.value.trim().toUpperCase();
+	if (!normalizedCode) {
 		couponError.value = __("Please enter a coupon code");
 		return;
 	}
+
+	// Reflect normalized casing back into the input / applied card
+	couponCode.value = normalizedCode;
 
 	couponError.value = "";
 	let result;
 	try {
 		const params = {
-			coupon_code: couponCode.value.trim(),
+			coupon_code: normalizedCode,
 			event: eventId.value,
 		};
 		// Pass user email for guest mode to properly check per-user limits
@@ -1039,6 +1064,8 @@ async function applyCoupon() {
 			};
 			// Info panel shows details - no toast needed
 		}
+
+		appliedCouponQuery.value = normalizedCode;
 	} else {
 		couponApplied.value = false;
 		couponData.value = null;
@@ -1051,6 +1078,7 @@ function removeCoupon() {
 	couponApplied.value = false;
 	couponData.value = null;
 	couponError.value = "";
+	appliedCouponQuery.value = null;
 }
 
 // --- FORM VALIDATION ---
@@ -1175,6 +1203,9 @@ async function submit() {
 		guest_email: props.isGuestMode ? guestEmail.value.trim() : null,
 		guest_full_name: props.isGuestMode ? guestFullName.value.trim() : null,
 		guest_phone: props.isGuestMode && isPhoneOtp.value ? guestPhone.value.trim() : null,
+		invoice_requested: invoiceRequested.value,
+		tax_id: invoiceRequested.value ? taxId.value?.trim() : null,
+		billing_address: invoiceRequested.value ? billingAddress.value?.trim() : null,
 	};
 
 	if (props.isGuestMode) {
