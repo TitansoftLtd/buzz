@@ -198,6 +198,8 @@ class EventBooking(Document):
 			ticket.first_name = attendee.first_name
 			ticket.last_name = attendee.last_name
 			ticket.attendee_email = attendee.email
+			if attendee.email and frappe.db.exists("User", attendee.email):
+				ticket.owner = attendee.email
 
 			if attendee.add_ons:
 				add_ons_list = frappe.get_cached_doc("Attendee Ticket Add-on", attendee.add_ons).add_ons
