@@ -405,7 +405,6 @@ def process_booking(
 	booking.event = event
 	booking.coupon_code = coupon_code
 	booking.user = booking_user
-	booking.owner = booking_user
 
 	if event_doc.apply_tax and invoice_requested:
 		booking.invoice_requested = 1

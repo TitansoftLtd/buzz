@@ -89,7 +89,6 @@ def allocate_ticket(entry: str, event: str, ticket_type: str):
 	booking = frappe.new_doc("Event Booking")
 	booking.event = event
 	booking.user = booking_user
-	booking.owner = booking_user
 	booking.append(
 		"attendees",
 		{
