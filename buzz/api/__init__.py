@@ -888,9 +888,7 @@ def get_ticket_details(ticket_id: str) -> dict:
 	ticket_doc = frappe.get_cached_doc("Event Ticket", ticket_id)
 
 	if frappe.session.user != "Administrator":
-		is_attendee = ticket_doc.attendee_email == frappe.session.user
-		is_owner = ticket_doc.owner == frappe.session.user
-		if not (is_attendee or is_owner):
+		if ticket_doc.attendee_email != frappe.session.user:
 			frappe.throw(frappe._("Not permitted to view this ticket"))
 
 	details.doc = ticket_doc
@@ -942,12 +940,7 @@ def get_ticket_details(ticket_id: str) -> dict:
 	booking_doc = None
 	if ticket_doc.booking:
 		booking_doc = frappe.get_cached_doc("Event Booking", ticket_doc.booking)
-		if (
-			frappe.session.user == "Administrator"
-			or booking_doc.owner == frappe.session.user
-			or booking_doc.user == frappe.session.user
-			or ticket_doc.attendee_email == frappe.session.user
-		):
+		if booking_doc.user == frappe.session.user:
 			details.booking = booking_doc
 		else:
 			details.booking = None
