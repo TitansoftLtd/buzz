@@ -171,6 +171,7 @@ class EventTicket(Document):
 
 	def on_cancel(self):
 		self.ignore_linked_doctypes = ["Event Booking", "Ticket Cancellation Request"]
+		self.db_set("confirmation_status", "Cancelled", update_modified=False)
 		self.send_cancellation_email()
 
 	def send_cancellation_email(self):

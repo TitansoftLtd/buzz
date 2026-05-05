@@ -141,7 +141,7 @@
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Confirmation Status",
-   "options": "Pending\nConfirmed\nDeclined",
+   "options": "Pending\nConfirmed\nDeclined\nCancelled",
    "read_only": 1
   },
   {
