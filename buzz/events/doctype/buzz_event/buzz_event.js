@@ -348,6 +348,81 @@ frappe.ui.form.on("Buzz Event", {
 			);
 		}
 
+		// Send Reminder to Confirmed Attendees
+		if (!frm.is_new()) {
+			frm.add_custom_button(
+				__("Send Reminder to Confirmed"),
+				function () {
+					const dialog = new frappe.ui.Dialog({
+						title: __("Send Reminder for {0}", [frm.doc.title]),
+						fields: [
+							{
+								fieldname: "use_template",
+								fieldtype: "Check",
+								label: __("Use Email Template"),
+								default: 1,
+							},
+							{
+								fieldname: "email_template",
+								fieldtype: "Link",
+								label: __("Email Template"),
+								options: "Email Template",
+								depends_on: "eval:doc.use_template",
+								mandatory_depends_on: "eval:doc.use_template",
+							},
+							{
+								fieldname: "subject",
+								fieldtype: "Data",
+								label: __("Email Subject"),
+								depends_on: "eval:!doc.use_template",
+								mandatory_depends_on: "eval:!doc.use_template",
+								default: __("Reminder: {0}", [frm.doc.title]),
+							},
+							{
+								fieldname: "message",
+								fieldtype: "Text Editor",
+								label: __("Email Message"),
+								depends_on: "eval:!doc.use_template",
+								mandatory_depends_on: "eval:!doc.use_template",
+								description: __(
+									"Jinja placeholders available: {{ first_name }}, {{ attendee_name }}, {{ event_title }}, {{ event_start_date }}, {{ event_venue }}"
+								),
+							},
+						],
+						primary_action_label: __("Send"),
+						primary_action(values) {
+							const args = { event: frm.doc.name };
+							if (values.use_template) {
+								args.email_template = values.email_template;
+							} else {
+								args.subject = values.subject;
+								args.message = values.message;
+							}
+							frappe.call({
+								method: "buzz.ticketing.attendance.send_reminder_to_confirmed",
+								args: args,
+								freeze: true,
+								freeze_message: __("Sending reminder emails..."),
+								callback(r) {
+									dialog.hide();
+									if (r.message) {
+										frappe.show_alert({
+											message: __("Reminder sent to {0} confirmed attendees", [
+												r.message.sent,
+											]),
+											indicator: r.message.sent ? "green" : "orange",
+										});
+									}
+								},
+							});
+						},
+					});
+					dialog.show();
+				},
+				__("Actions")
+			);
+		}
+
 		// Send Confirmation Emails button (only when confirmation is enabled)
 		if (!frm.is_new() && frm.doc.require_attendance_confirmation) {
 			frm.add_custom_button(

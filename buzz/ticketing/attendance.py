@@ -68,6 +68,68 @@ def trigger_confirmation_emails(event: str) -> dict:
 	return {"sent": count}
 
 
+@frappe.whitelist()
+def send_reminder_to_confirmed(
+	event: str,
+	email_template: str | None = None,
+	subject: str | None = None,
+	message: str | None = None,
+) -> dict:
+	"""Send a reminder email to all confirmed attendees of an event.
+
+	Either provide `email_template` (preferred) OR `subject` + `message`.
+	The email body is rendered with Jinja using the ticket/event context.
+	"""
+	event_doc = frappe.get_cached_doc("Buzz Event", event)
+
+	if email_template:
+		template_doc = frappe.get_doc("Email Template", email_template)
+		raw_subject = template_doc.subject
+		raw_message = template_doc.response_
+	else:
+		if not subject or not message:
+			frappe.throw(_("Either an Email Template or Subject + Message is required"))
+		raw_subject = subject
+		raw_message = message
+
+	tickets = frappe.get_all(
+		"Event Ticket",
+		filters={
+			"event": event,
+			"docstatus": 1,
+			"confirmation_status": "Confirmed",
+		},
+		fields=["name", "first_name", "last_name", "attendee_name", "attendee_email"],
+	)
+
+	for ticket in tickets:
+		context = {
+			"first_name": ticket.first_name or "",
+			"last_name": ticket.last_name or "",
+			"attendee_name": ticket.attendee_name or "",
+			"attendee_email": ticket.attendee_email,
+			"event_title": event_doc.title,
+			"event_start_date": event_doc.start_date,
+			"event_end_date": event_doc.end_date,
+			"event_start_time": event_doc.start_time,
+			"event_end_time": event_doc.end_time,
+			"event_venue": event_doc.venue,
+			"event": event_doc,
+			"ticket": ticket,
+		}
+		rendered_subject = frappe.render_template(raw_subject, context)
+		rendered_message = frappe.render_template(raw_message, context)
+
+		frappe.sendmail(
+			recipients=[ticket.attendee_email],
+			subject=rendered_subject,
+			message=rendered_message,
+			delayed=False,
+		)
+
+	return {"sent": len(tickets)}
+
+
 def send_confirmation_emails_for_event(event: str) -> int:
 	"""Send initial confirmation emails for all unconfirmed, unsent tickets of an event."""
 	event_doc = frappe.get_cached_doc("Buzz Event", event)
