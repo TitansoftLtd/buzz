@@ -3,24 +3,15 @@
 		<div v-if="eventBookingResource.loading" class="flex justify-center py-16">
 			<Spinner class="w-8 h-8" />
 		</div>
-		<div
-			v-else-if="eventNotFound"
-			class="flex flex-col items-center justify-center py-16 px-4"
-		>
+		<div v-else-if="eventNotFound" class="flex flex-col items-center justify-center py-16 px-4">
 			<div class="text-center max-w-md">
-				<h2 class="text-xl font-semibold text-ink-gray-8 mb-2">
+				<h2 class="text-2xl-semibold text-ink-gray-8 mb-2">
 					{{ __("Event Not Found") }}
 				</h2>
 				<p class="text-ink-gray-6 mb-6">
-					{{
-						__(
-							"The event you are looking for does not exist or may have been removed."
-						)
-					}}
+					{{ __("The event you are looking for does not exist or may have been removed.") }}
 				</p>
-				<Button variant="solid" size="lg" @click="$router.push('/')">{{
-					__("Go to Home")
-				}}</Button>
+				<Button variant="solid" size="lg" @click="$router.push('/')">{{ __("Go to Home") }}</Button>
 			</div>
 		</div>
 		<div
@@ -31,24 +22,19 @@
 				<img
 					v-if="eventBookingData.eventDetails?.banner_image"
 					:src="eventBookingData.eventDetails.banner_image"
-					:alt="eventBookingData.eventDetails.title"
-					class="w-full rounded-lg mb-6 object-cover max-h-48"
+					:alt="eventBookingData.eventDetails?.title"
+					class="w-full rounded-6 mb-6 object-cover max-h-48"
 				/>
-				<h2 class="text-xl font-semibold text-ink-gray-8 mb-2">
+				<h2 class="text-2xl-semibold text-ink-gray-8 mb-2">
 					{{ __("Registrations Closed") }}
 				</h2>
 				<p class="text-ink-gray-6 mb-6">
 					{{ __("Registrations for this event are closed.") }}
 				</p>
-				<Button variant="solid" size="lg" @click="goToHome">{{
-					__("Browse Other Events")
-				}}</Button>
+				<Button variant="solid" size="lg" @click="goToHome">{{ __("Browse Other Events") }}</Button>
 			</div>
 		</div>
-		<div
-			v-else-if="registrationsFull"
-			class="flex flex-col items-center justify-center py-12 px-4"
-		>
+		<div v-else-if="registrationsFull" class="flex flex-col items-center justify-center py-12 px-4">
 			<div class="w-full max-w-md">
 				<img
 					v-if="eventBookingData.eventDetails?.banner_image"
@@ -88,10 +74,7 @@
 				</div>
 
 				<!-- Waitlist form -->
-				<div
-					v-else
-					class="bg-surface-white border border-outline-gray-3 rounded-xl p-6"
-				>
+				<div v-else class="bg-surface-white border border-outline-gray-3 rounded-xl p-6">
 					<div class="grid grid-cols-1 gap-4">
 						<FormControl
 							v-model="waitlistForm.full_name"
@@ -142,9 +125,9 @@
 				v-if="eventBookingData.availableAddOns && eventBookingData.availableTicketTypes"
 				:availableAddOns="eventBookingData.availableAddOns"
 				:availableTicketTypes="eventBookingData.availableTicketTypes"
-				:taxSettings="eventBookingData.taxSettings"
-				:eventDetails="eventBookingData.eventDetails"
-				:customFields="eventBookingData.customFields"
+				:taxSettings="eventBookingData.taxSettings || {}"
+				:eventDetails="eventBookingData.eventDetails || {}"
+				:customFields="eventBookingData.customFields || []"
 				:eventRoute="eventRoute"
 				:paymentGateways="eventBookingData.paymentGateways"
 				:isGuestMode="isGuest"
@@ -154,15 +137,32 @@
 	</div>
 </template>
 
-<script setup>
-import { session } from "@/data/session";
-import { FormControl, Spinner, createResource } from "frappe-ui";
-import { computed, reactive, ref, watch } from "vue";
-import BookingForm from "../components/BookingForm.vue";
-import LucideTicketX from "~icons/lucide/ticket-x";
-import LucideCheckCircle from "~icons/lucide/check-circle";
+<script setup lang="ts">
+import { FormControl, Spinner, createResource, usePageMeta } from "frappe-ui"
+import { computed, reactive, ref, watch } from "vue"
+import LucideCheckCircle from "~icons/lucide/check-circle"
+import LucideTicketX from "~icons/lucide/ticket-x"
 
-const eventBookingData = reactive({
+import { session } from "@/data/session"
+import type {
+	AvailableAddOn,
+	AvailableTicketType,
+	FrappeError,
+	FrappeField,
+	OfflineMethod,
+} from "@/types"
+
+import BookingForm from "../components/BookingForm.vue"
+
+const eventBookingData = reactive<{
+	availableAddOns: AvailableAddOn[] | null
+	availableTicketTypes: AvailableTicketType[] | null
+	taxSettings: Record<string, any> | null
+	eventDetails: Record<string, any> | null
+	customFields: FrappeField[] | null
+	paymentGateways: Record<string, any>[]
+	offlineMethods: OfflineMethod[]
+}>({
 	availableAddOns: null,
 	availableTicketTypes: null,
 	taxSettings: null,
@@ -170,24 +170,29 @@ const eventBookingData = reactive({
 	customFields: null,
 	paymentGateways: [],
 	offlineMethods: [],
-});
+})
 
-const eventNotFound = ref(false);
-const registrationsClosed = ref(false);
-const registrationsFull = ref(false);
+const eventNotFound = ref(false)
+const registrationsClosed = ref(false)
+const registrationsFull = ref(false)
 
 const props = defineProps({
 	eventRoute: {
 		type: String,
 		required: true,
 	},
-});
+})
 
-const isGuest = computed(() => !session.isLoggedIn);
+const isGuest = computed(() => !session.isLoggedIn)
+
+usePageMeta(() => {
+	const eventTitle = eventBookingData.eventDetails?.title
+	return eventTitle ? { title: `${eventTitle} - ${__("Register")}` } : null
+})
 
 const goToHome = () => {
-	window.location.href = "/";
-};
+	window.location.href = "/"
+}
 
 // Waitlist form
 const waitlistForm = reactive({
@@ -195,70 +200,70 @@ const waitlistForm = reactive({
 	email: "",
 	phone_number: "",
 	organization: "",
-});
-const waitlistRegistered = ref(false);
-const waitlistError = ref(null);
+})
+const waitlistRegistered = ref(false)
+const waitlistError = ref<string | null>(null)
 
 const waitlistResource = createResource({
 	url: "buzz.api.register_event_waitlist",
 	onSuccess: () => {
-		waitlistRegistered.value = true;
-		waitlistError.value = null;
+		waitlistRegistered.value = true
+		waitlistError.value = null
 	},
-	onError: (error) => {
-		waitlistError.value = error.messages?.[0] || __("Failed to register. Please try again.");
+	onError: (error: FrappeError) => {
+		waitlistError.value = error.messages?.[0] || __("Failed to register. Please try again.")
 	},
-});
+})
 
 function submitWaitlist() {
-	if (!waitlistForm.full_name || !waitlistForm.email || !waitlistForm.phone_number || !waitlistForm.organization) {
-		waitlistError.value = __("Please fill in all fields.");
-		return;
+	if (
+		!waitlistForm.full_name ||
+		!waitlistForm.email ||
+		!waitlistForm.phone_number ||
+		!waitlistForm.organization
+	) {
+		waitlistError.value = __("Please fill in all fields.")
+		return
 	}
-	waitlistError.value = null;
-	waitlistResource.submit({
-		full_name: waitlistForm.full_name,
-		email: waitlistForm.email,
-		phone_number: waitlistForm.phone_number,
-		organization: waitlistForm.organization,
-	});
+	waitlistError.value = null
+	waitlistResource.submit({ ...waitlistForm })
 }
 
 const eventBookingResource = createResource({
-	url: "buzz.api.get_event_booking_data",
+	url: "buzz.api.booking.get_event_booking_data",
 	params: {
 		event_route: props.eventRoute,
 	},
 	auto: true,
-	onSuccess: (data) => {
-		eventBookingData.availableAddOns = data.available_add_ons || [];
-		eventBookingData.availableTicketTypes = data.available_ticket_types || [];
+	onSuccess: (data: Record<string, any>) => {
+		eventBookingData.availableAddOns = data.available_add_ons || []
+		eventBookingData.availableTicketTypes = data.available_ticket_types || []
 		eventBookingData.taxSettings = data.tax_settings || {
 			apply_tax: false,
 			tax_inclusive: false,
 			tax_label: "Tax",
 			tax_percentage: 0,
-		};
-		eventBookingData.eventDetails = data.event_details || {};
-		eventBookingData.customFields = data.custom_fields || [];
-		eventBookingData.paymentGateways = data.payment_gateways || [];
-		eventBookingData.offlineMethods = data.offline_methods || [];
-		registrationsClosed.value = data.registrations_closed || false;
-		registrationsFull.value = data.registrations_full || false;
+		}
+		eventBookingData.eventDetails = data.event_details || {}
+		eventBookingData.customFields = data.custom_fields || []
+		eventBookingData.paymentGateways = data.payment_gateways || []
+		eventBookingData.offlineMethods = data.offline_methods || []
+		registrationsClosed.value = data.registrations_closed || false
+		registrationsFull.value = data.registrations_full || false
 	},
-	onError: (error) => {
+	onError: (error: FrappeError) => {
 		if (error.message?.includes("DoesNotExistError")) {
-			eventNotFound.value = true;
+			eventNotFound.value = true
 		}
 	},
-});
+})
 
 watch(
 	() => session.isLoggedIn,
 	(isLoggedIn) => {
 		if (isLoggedIn) {
-			eventBookingResource.reload();
+			eventBookingResource.reload()
 		}
-	}
-);
+	},
+)
 </script>

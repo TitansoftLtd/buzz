@@ -1,8 +1,9 @@
+import { createResource, toast } from "frappe-ui"
+import { type Ref, ref } from "vue"
+
 import beepFailSound from "@/assets/audio/beep-fail.wav"
 import beepSound from "@/assets/audio/beep.wav"
 import type { TicketAddOnValue } from "@/types/Ticketing/TicketAddOnValue"
-import { createResource, toast } from "frappe-ui"
-import { type Ref, ref } from "vue"
 
 interface ValidationTicket {
 	id: string
@@ -19,12 +20,25 @@ interface ValidationTicket {
 	check_in_time: string | null
 	check_in_date?: string | null
 	booking_id: string
-	add_ons: TicketAddOnValue[]
+	add_ons: ValidationAddOn[]
+}
+
+// Check-in responses join the add-on title onto each stored add-on value.
+interface ValidationAddOn extends TicketAddOnValue {
+	add_on_title?: string
+}
+
+interface PaymentDetails {
+	name?: string
+	amount?: number
+	currency?: string
 }
 
 interface ValidationResult {
-	message: string
-	ticket: ValidationTicket
+	message?: string
+	error?: string
+	ticket?: ValidationTicket
+	payment_details?: PaymentDetails
 }
 
 interface TicketValidationState {
@@ -59,10 +73,7 @@ const playErrorSound = (): void => {
 	audio.play()
 }
 
-const showDebouncedToast = (
-	message: string,
-	type: "error" | "success" = "error",
-): void => {
+const showDebouncedToast = (message: string, type: "error" | "success" = "error"): void => {
 	const now = Date.now()
 	if (lastToastMessage === message && now - lastToastTime < TOAST_DEBOUNCE_MS) {
 		return
@@ -79,7 +90,7 @@ const showDebouncedToast = (
 
 // Ticket validation resource
 const validateTicketResource = createResource({
-	url: "buzz.api.validate_ticket_for_checkin",
+	url: "buzz.api.checkin.validate_ticket_for_checkin",
 	onSuccess: (data: ValidationResult) => {
 		validationResult.value = data
 		showTicketModal.value = true
@@ -89,34 +100,14 @@ const validateTicketResource = createResource({
 	onError: (error: any) => {
 		validationResult.value = null
 		isProcessingTicket.value = false
-		const errorData = JSON.stringify(error)
-
-		if (errorData.includes("Ticket not found")) {
-			showDebouncedToast("Ticket not found")
-		} else if (
-			errorData.includes(
-				"This ticket is not confirmed and cannot be used for check-in",
-			)
-		) {
-			showDebouncedToast(
-				"This ticket is not confirmed and cannot be used for check-in",
-			)
-		} else if (errorData.includes("This ticket was already checked in today")) {
-			showDebouncedToast("This ticket was already checked in today.")
-		} else if (errorData.includes("cancelled")) {
-			showDebouncedToast(
-				"This ticket has been cancelled and cannot be checked in",
-			)
-		} else {
-			showDebouncedToast("Error validating ticket")
-		}
+		showDebouncedToast(error?.messages?.[0] || __("Error validating ticket"))
 		playErrorSound()
 	},
 })
 
 // Check-in resource
 const checkInResource = createResource({
-	url: "buzz.api.checkin_ticket",
+	url: "buzz.api.checkin.checkin_ticket",
 	onSuccess: (data: ValidationResult) => {
 		validationResult.value = data
 		showTicketModal.value = false
@@ -124,6 +115,8 @@ const checkInResource = createResource({
 	},
 	onError: (error: any) => {
 		isCheckingIn.value = false
+		showDebouncedToast(error?.messages?.[0] || __("Check-in failed"))
+		playErrorSound()
 	},
 })
 

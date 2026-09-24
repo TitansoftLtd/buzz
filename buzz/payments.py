@@ -1,30 +1,46 @@
 import frappe
+from frappe import _
+from frappe.utils import flt
 from payments.utils import get_payment_gateway_controller
+from pydantic import AliasPath, BaseModel, ConfigDict, Field
+
+from buzz.ticketing.doctype.event_booking_refund.event_booking_refund import record_gateway_refund
 
 
-def get_payment_gateway_for_event(event: str):
-	return frappe.get_cached_value("Buzz Event", event, "payment_gateway")
+class RefundNotification(BaseModel):
+	"""The refund a Razorpay `refund.processed` or `refund.failed` webhook carries.
+
+	The fields sit at `payload.refund.entity` in the webhook body, and every one
+	of them is mandatory: the payments app hands us refund events only, and a
+	refund event without them is broken rather than uninteresting.
+	"""
+
+	model_config = ConfigDict(extra="ignore")
+
+	refund_id: str = Field(validation_alias=AliasPath("payload", "refund", "entity", "id"))
+	payment_id: str = Field(validation_alias=AliasPath("payload", "refund", "entity", "payment_id"))
+	status: str = Field(validation_alias=AliasPath("payload", "refund", "entity", "status"))
+	amount_in_minor_unit: int = Field(validation_alias=AliasPath("payload", "refund", "entity", "amount"))
+
+	@property
+	def amount(self) -> float:
+		"""What the gateway refunded, in the major unit the booking is priced in."""
+		return flt(self.amount_in_minor_unit) / 100
 
 
 def get_payment_gateways_for_event(event: str) -> list[str]:
 	"""Get all payment gateways configured for an event."""
-	gateways = frappe.get_all(
+	return frappe.get_all(
 		"Event Payment Gateway",
 		filters={"parent": event, "parenttype": "Buzz Event"},
 		pluck="payment_gateway",
 	)
-	if not gateways:
-		# Fallback to legacy field
-		legacy = frappe.get_cached_value("Buzz Event", event, "payment_gateway")
-		return [legacy] if legacy else []
-	return gateways
 
 
 def get_controller(payment_gateway):
 	return get_payment_gateway_controller(payment_gateway)
 
 
-@frappe.whitelist()
 def get_payment_link_for_booking(
 	booking_id: str, redirect_to: str = "/events", payment_gateway: str | None = None
 ) -> str:
@@ -33,7 +49,7 @@ def get_payment_link_for_booking(
 	if not payment_gateway:
 		gateways = get_payment_gateways_for_event(booking_doc.event)
 		if not gateways:
-			frappe.throw("No payment gateway configured for this event")
+			frappe.throw(_("No payment gateway configured for this event"))
 		payment_gateway = gateways[0]
 	return get_payment_link(
 		"Event Booking",
@@ -46,7 +62,6 @@ def get_payment_link_for_booking(
 	)
 
 
-@frappe.whitelist()
 def get_payment_link_for_sponsorship(
 	sponsorship_enquiry: str,
 	sponsorship_tier: str,
@@ -57,7 +72,7 @@ def get_payment_link_for_sponsorship(
 	if not payment_gateway:
 		gateways = get_payment_gateways_for_event(tier_doc.event)
 		if not gateways:
-			frappe.throw("No payment gateway configured for this event")
+			frappe.throw(_("No payment gateway configured for this event"))
 		payment_gateway = gateways[0]
 	event_title = frappe.get_cached_value("Buzz Event", tier_doc.event, "title")
 	frappe.db.set_value(
@@ -136,8 +151,6 @@ def mark_payment_as_received(reference_doctype: str, reference_docname: str):
 	if frappe.in_test:
 		return
 
-	import json
-
 	request = frappe.get_all(
 		"Integration Request",
 		{
@@ -150,7 +163,7 @@ def mark_payment_as_received(reference_doctype: str, reference_docname: str):
 
 	if len(request):
 		data = frappe.db.get_value("Integration Request", request[0].name, "data")
-		data = frappe._dict(json.loads(data))
+		data = frappe.parse_json(data)
 
 		payment_gateway = data.get("payment_gateway")
 		if payment_gateway == "Razorpay":
@@ -177,7 +190,41 @@ def mark_payment_as_received(reference_doctype: str, reference_docname: str):
 			},
 		)
 
-		frappe.db.commit()
+		frappe.db.commit()  # nosemgrep: frappe-semgrep-rules.rules.frappe-manual-commit
+
+
+def handle_refund_notification(doctype: str, docname: str) -> None:
+	"""Apply a gateway refund webhook to the booking whose payment it belongs to."""
+	# Returns nothing on purpose: `call_hook_method` stops at the first handler
+	# that returns a value.
+	payload = frappe.parse_json(frappe.db.get_value(doctype, docname, "data"))
+	notification = RefundNotification.model_validate(payload)
+
+	payment = frappe.db.get_value(
+		"Event Payment",
+		{"payment_id": notification.payment_id},
+		["name", "reference_doctype", "reference_docname"],
+		as_dict=True,
+	)
+
+	if not payment or payment.reference_doctype != "Event Booking":
+		return
+
+	# The same event arrives more than once, so the refund is keyed on its id.
+	record_gateway_refund(
+		booking=payment.reference_docname,
+		payment=payment.name,
+		refund_id=notification.refund_id,
+		status=notification.status,
+		amount=notification.amount,
+	)
+
+	frappe.db.set_value(
+		doctype,
+		docname,
+		{"reference_doctype": "Event Booking", "reference_docname": payment.reference_docname},
+		update_modified=False,
+	)
 
 
 # TODO: use it later!

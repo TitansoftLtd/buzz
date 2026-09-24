@@ -1,13 +1,20 @@
 # Copyright (c) 2025, BWH Studios and contributors
 # For license information, please see license.txt
-import json
-
 import frappe
 from frappe import _
 from frappe.model.document import Document
+from frappe.utils import cstr, flt
 
-from buzz.api import OFFLINE_PAYMENT_METHOD
-from buzz.payments import mark_payment_as_received
+from buzz.api.booking.services import OFFLINE_PAYMENT_METHOD
+from buzz.payments import get_controller, mark_payment_as_received
+from buzz.ticketing.doctype.event_booking_refund.event_booking_refund import (
+	get_committed_refunds,
+	get_committed_tickets,
+	record_gateway_refund,
+)
+from buzz.utils import render_email_template
+
+RAZORPAY = "Razorpay"
 
 
 class EventBooking(Document):
@@ -37,6 +44,8 @@ class EventBooking(Document):
 		offline_payment_method: DF.Data | None
 		payment_method: DF.Data | None
 		payment_status: DF.Literal["Unpaid", "Paid", "Verification Pending"]
+		refund_status: DF.Literal["", "Refund Initiated", "Partially Refunded", "Refunded"]
+		refunded_amount: DF.Currency
 		status: DF.Literal["Confirmed", "Approval Pending", "Approved", "Rejected"]
 		tax_amount: DF.Currency
 		tax_id: DF.Data | None
@@ -122,6 +131,8 @@ class EventBooking(Document):
 
 		for ticket_type, num_tickets in num_tickets_by_type.items():
 			ticket_type_doc = frappe.get_cached_doc("Event Ticket Type", ticket_type)
+			if str(ticket_type_doc.event) != str(self.event):
+				frappe.throw(_("{0} is not available for this event").format(ticket_type_doc.title))
 			if not ticket_type_doc.is_published:
 				frappe.throw(frappe._(f"{ticket_type_doc.title} tickets no longer available!"))
 
@@ -145,6 +156,112 @@ class EventBooking(Document):
 	def on_submit(self):
 		self.validate_coupon_availability()
 		self.generate_tickets()
+
+		try:
+			self.send_booking_confirmation_email()
+		except Exception:
+			frappe.log_error(
+				title="Booking confirmation email failed",
+				reference_doctype=self.doctype,
+				reference_name=self.name,
+			)
+
+	def send_booking_confirmation_email(self):
+		event_doc = frappe.get_cached_doc("Buzz Event", self.event)
+		# Fallback to global setting if event-level not set
+		self.send_booking_email(
+			template=(
+				event_doc.booking_confirmation_email_template
+				or frappe.db.get_single_value("Buzz Settings", "default_booking_confirmation_email_template")
+			),
+			builtin="booking_confirmation",
+			subject=_("Your booking for {0} is confirmed ✅").format(event_doc.title),
+		)
+
+	def send_offline_acknowledgement_email(self):
+		"""Tell the booker their offline payment is awaiting verification. Sent while the
+		booking is still a draft, so the confirmation above stays the approval's job."""
+		event_doc = frappe.get_cached_doc("Buzz Event", self.event)
+		self.send_booking_email(
+			template=event_doc.offline_acknowledgement_email_template,
+			builtin="offline_booking_acknowledgement",
+			subject=_("We received your booking for {0} — payment verification pending").format(
+				event_doc.title
+			),
+		)
+
+	def send_booking_email(self, template: str | None, builtin: str, subject: str) -> None:
+		recipient = self.get_booking_email_recipient()
+		if not recipient:
+			return
+
+		args = self.get_booking_email_args()
+
+		content = None
+		if template:
+			email_template = render_email_template(template, args)
+			subject = email_template.get("subject") or subject
+			content = email_template.get("message")
+
+		frappe.sendmail(
+			recipients=[recipient],
+			subject=subject,
+			content=content,
+			template=None if template else builtin,
+			args=args,
+			reference_doctype=self.doctype,
+			reference_name=self.name,
+		)
+
+	def get_booking_email_recipient(self) -> str | None:
+		"""Who to email about this booking, or None when nobody should be emailed."""
+		# Never email system/placeholder users — they are not real recipients.
+		if self.user in ("Administrator", "Guest"):
+			return None
+
+		if not frappe.get_cached_value("Buzz Event", self.event, "send_booking_confirmation_email"):
+			return None
+
+		return frappe.db.get_value("User", self.user, "email") or self.user
+
+	def get_booking_email_args(self) -> dict:
+		event_doc = frappe.get_cached_doc("Buzz Event", self.event)
+		return {
+			"doc": self,
+			"event_doc": event_doc,
+			"event_title": event_doc.title,
+			"venue": event_doc.venue,
+			"attendee_rows": self.get_attendee_email_rows(),
+			"support_email": frappe.db.get_single_value("Buzz Settings", "support_email"),
+		}
+
+	def get_attendee_email_rows(self) -> list[dict]:
+		# Pre-fetch ticket type titles in a single query so the email template
+		# loop stays a pure display operation (no per-attendee DB round-trips).
+		ticket_type_names = list({attendee.ticket_type for attendee in self.attendees})
+		ticket_type_titles = {}
+		if ticket_type_names:
+			# Ticket types autoname to integers but arrive off the attendee row as
+			# strings, so both sides of the lookup are cast before they are compared.
+			ticket_type_titles = {
+				str(row.name): row.title
+				for row in frappe.get_all(
+					"Event Ticket Type",
+					filters={"name": ["in", ticket_type_names]},
+					fields=["name", "title"],
+				)
+			}
+
+		return [
+			{
+				"full_name": attendee.full_name
+				or " ".join(part for part in (attendee.first_name, attendee.last_name) if part),
+				"ticket_type_title": ticket_type_titles.get(str(attendee.ticket_type), attendee.ticket_type),
+				"number_of_add_ons": attendee.number_of_add_ons,
+				"amount": (attendee.amount or 0) + (attendee.add_on_total or 0),
+			}
+			for attendee in self.attendees
+		]
 
 	def validate_coupon_availability(self):
 		"""Re-validate coupon with lock to prevent race condition."""
@@ -208,8 +325,8 @@ class EventBooking(Document):
 				custom_fields_data = attendee.custom_fields
 				if isinstance(custom_fields_data, str):
 					try:
-						custom_fields_data = json.loads(custom_fields_data)
-					except (json.JSONDecodeError, TypeError):
+						custom_fields_data = frappe.parse_json(custom_fields_data)
+					except (ValueError, TypeError):
 						custom_fields_data = {}
 
 				# Get custom field definitions for this event to get proper labels and types
@@ -260,6 +377,202 @@ class EventBooking(Document):
 		tickets = frappe.db.get_all("Event Ticket", filters={"booking": self.name}, pluck="name")
 		for ticket in tickets:
 			frappe.get_cached_doc("Event Ticket", ticket).cancel()
+
+	@frappe.whitelist()
+	def get_refund_summary(self) -> dict:
+		"""
+		Get the amount and tickets still refundable on this booking.
+
+		Returns:
+		    committed: amount the gateway has refunded or not answered on yet
+		    remaining: booking total minus the committed amount, the most a new refund may be
+		    tickets: tickets no committed refund has claimed, from `get_refundable_tickets`
+		"""
+		# Read by both the refund dialog and `refund`, so what an operator is
+		# offered cannot drift from what the server accepts.
+		committed = sum(flt(refund.amount) for refund in get_committed_refunds(self.name))
+
+		return {
+			"committed": committed,
+			"remaining": flt(self.total_amount) - committed,
+			"tickets": self.get_refundable_tickets(),
+		}
+
+	def get_refundable_tickets(self) -> list[dict]:
+		"""
+		Get the tickets neither a committed refund nor the front desk has claimed,
+		one row per ticket.
+
+		Returns:
+		    ticket: name of the Event Ticket
+		    attendee: name of whoever the ticket was booked for
+		    ticket_type: the attendee's ticket type
+		    amount: the ticket's share of what the buyer was charged
+		"""
+		claimed = get_committed_tickets(self.name)
+		attendee_totals = [flt(attendee.amount) + flt(attendee.add_on_total) for attendee in self.attendees]
+		booked = sum(attendee_totals)
+
+		# Attendee amounts are pre-tax and pre-discount, so scale them to what was charged.
+		charged_share = (flt(self.total_amount) / booked) if booked else 0
+
+		booked_tickets = frappe.get_all(
+			"Event Ticket",
+			filters={"booking": self.name, "docstatus": 1},
+			fields=["name", "attendee_email", "ticket_type"],
+			order_by="creation asc",
+		)
+		used = get_checked_in_tickets([ticket.name for ticket in booked_tickets])
+
+		tickets_by_attendee = {}
+		for ticket in booked_tickets:
+			tickets_by_attendee.setdefault((ticket.attendee_email, cstr(ticket.ticket_type)), []).append(
+				ticket.name
+			)
+
+		refundable = []
+		for attendee, attendee_total in zip(self.attendees, attendee_totals, strict=True):
+			matches = tickets_by_attendee.get((attendee.email, cstr(attendee.ticket_type)))
+			if not matches:
+				continue
+
+			ticket = matches.pop(0)
+			if ticket in claimed or ticket in used:
+				continue
+
+			refundable.append(
+				{
+					"ticket": ticket,
+					"attendee": attendee.full_name
+					or " ".join(part for part in (attendee.first_name, attendee.last_name) if part),
+					"ticket_type": attendee.ticket_type,
+					"amount": flt(attendee_total * charged_share, self.precision("total_amount")),
+				}
+			)
+
+		return refundable
+
+	@frappe.whitelist()
+	def refund(self, amount: float, tickets: list[str] | None = None) -> str:
+		"""Refund `amount` against this booking's payment."""
+		frappe.only_for("System Manager")
+
+		payment = self.get_received_payment()
+		if payment.payment_gateway != RAZORPAY:
+			frappe.throw(_("Refunds are only supported for Razorpay at the moment"))
+
+		tickets = frappe.parse_json(tickets) if isinstance(tickets, str) else tickets
+		self.validate_refund(flt(amount), tickets)
+
+		refund = get_controller(payment.payment_gateway).refund_payment(payment.payment_id, flt(amount))
+
+		# The picked tickets are only recorded here. They are cancelled once the
+		# gateway settles the refund, since a refund can still fail. A custom
+		# amount maps to no ticket, so it cancels nothing.
+		frappe.get_doc(
+			{
+				"doctype": "Event Booking Refund",
+				"booking": self.name,
+				"payment": payment.name,
+				"refund_id": refund.get("id"),
+				"status": "Initiated",
+				"amount": flt(refund.get("amount")) / 100,
+				"currency": self.currency,
+				"tickets": [{"ticket": ticket} for ticket in tickets or []],
+			}
+		).insert()
+
+		self.set_refund_status()
+
+		return self.refund_status
+
+	@frappe.whitelist()
+	def sync_refunds(self) -> dict:
+		"""Reconcile this booking's refunds against what Razorpay actually holds."""
+		frappe.only_for("System Manager")
+
+		payment = self.get_received_payment()
+		if payment.payment_gateway != RAZORPAY:
+			frappe.throw(_("Refunds are only supported for Razorpay at the moment"))
+
+		# Razorpay lists the newest refund first, and each one recorded moves what
+		# is left to refund, so they are applied in the order they were raised.
+		refunds = list(reversed(get_controller(payment.payment_gateway).fetch_refunds(payment.payment_id)))
+
+		return {
+			"refunds": len(refunds),
+			"created": sum(self.record_refund(payment, refund) for refund in refunds),
+		}
+
+	def record_refund(self, payment, gateway_refund: dict) -> bool:
+		"""Record one gateway refund against this booking. True when it was new."""
+		return record_gateway_refund(
+			booking=self.name,
+			payment=payment.name,
+			refund_id=gateway_refund.get("id"),
+			status=gateway_refund.get("status"),
+			amount=flt(gateway_refund.get("amount")) / 100,
+		)
+
+	def validate_refund(self, amount: float, tickets: list[str] | None = None) -> None:
+		summary = self.get_refund_summary()
+
+		if amount <= 0:
+			frappe.throw(_("Refund amount must be greater than 0"))
+
+		if amount > summary["remaining"]:
+			frappe.throw(
+				_("Only {0} is left to refund on this booking").format(
+					frappe.format_value(
+						summary["remaining"], {"fieldtype": "Currency", "options": "currency"}, self
+					)
+				)
+			)
+
+		if get_checked_in_tickets(tickets or []):
+			# The attendee has been through the door, so the ticket has been used.
+			frappe.throw(_("A ticket that has been checked in cannot be refunded"))
+
+		refundable = {ticket["ticket"] for ticket in summary["tickets"]}
+		if not set(tickets or []) <= refundable:
+			# Ticket belongs to another booking, or an earlier refund claimed it.
+			frappe.throw(_("Those tickets cannot be refunded against this booking"))
+
+	def set_refund_status(self) -> None:
+		"""Recompute refunded amount and status from the refunds against this booking."""
+		refunds = frappe.get_all(
+			"Event Booking Refund", filters={"booking": self.name}, fields=["amount", "status"]
+		)
+		self.refunded_amount = sum(flt(refund.amount) for refund in refunds if refund.status == "Processed")
+
+		if self.refunded_amount >= flt(self.total_amount):
+			status = "Refunded"
+		elif self.refunded_amount:
+			status = "Partially Refunded"
+		elif any(refund.status == "Initiated" for refund in refunds):
+			status = "Refund Initiated"
+		else:
+			status = ""
+
+		self.db_set({"refunded_amount": self.refunded_amount, "refund_status": status}, notify=True)
+
+	def get_received_payment(self):
+		payment = frappe.get_all(
+			"Event Payment",
+			filters={
+				"reference_doctype": self.doctype,
+				"reference_docname": self.name,
+				"payment_received": 1,
+			},
+			fields=["name", "payment_gateway", "payment_id", "amount"],
+			order_by="creation desc",
+			limit=1,
+		)
+
+		if not payment or not payment[0].payment_id:
+			frappe.throw(_("No received payment found for this booking"))
+
+		return payment[0]
 
 	@frappe.whitelist()
 	def approve_booking(self):
@@ -350,3 +663,13 @@ class EventBooking(Document):
 				frappe.throw(_("No attendees with eligible ticket type for this coupon"))
 
 			self.total_amount = self.net_amount - self.discount_amount
+
+
+def get_checked_in_tickets(tickets: list[str]) -> set[str]:
+	"""Of the tickets given, the ones whose attendee has already been through the door."""
+	if not tickets:
+		return set()
+
+	return set(
+		frappe.get_all("Event Check In", filters={"ticket": ("in", tickets), "docstatus": 1}, pluck="ticket")
+	)

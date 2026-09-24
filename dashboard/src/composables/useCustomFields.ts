@@ -10,11 +10,15 @@
 export interface FrappeField {
 	fieldname: string
 	fieldtype: string
-	label?: string
+	label: string
 	options?: string | any[]
 	placeholder?: string
 	mandatory?: number | boolean
+	reqd?: number | boolean
+	default?: string | number | boolean
 	default_value?: string | number | boolean
+	link_options?: SelectOption[]
+	applied_to?: string
 }
 
 export interface SelectOption {
@@ -27,10 +31,7 @@ export interface SelectOption {
  * @param {string} fieldtype - Frappe field type
  * @returns {string} - FormControl type
  */
-export function getFormControlType(
-	fieldtype: string,
-	options?: string,
-): string {
+export function getFormControlType(fieldtype: string, options?: string): string {
 	if (fieldtype === "Data" && options === "Email") return "email"
 	if (fieldtype === "Data" && options === "URL") return "url"
 
@@ -82,17 +83,14 @@ export function isTextareaField(fieldtype: string): boolean {
  * @returns {Array} - Array of { label, value } objects
  */
 export function getFieldOptions(field: FrappeField): SelectOption[] {
-	const isSelectType =
-		field.fieldtype === "Select" || field.fieldtype === "Multi Select"
+	const isSelectType = field.fieldtype === "Select" || field.fieldtype === "Multi Select"
 	if (isSelectType && field.options) {
 		let options = []
 
 		if (typeof field.options === "string") {
 			// Split by newlines, trim each option, and filter out empty ones
 			// but preserve an empty first option as a placeholder
-			const allOptions = field.options
-				.split("\n")
-				.map((option) => option.trim())
+			const allOptions = field.options.split("\n").map((option) => option.trim())
 			const hasEmptyFirst = allOptions.length > 0 && allOptions[0].length === 0
 			options = allOptions.filter((option) => option.length > 0)
 			if (hasEmptyFirst) {
@@ -118,11 +116,7 @@ export function getFieldOptions(field: FrappeField): SelectOption[] {
 		})
 
 		// Debug log for development
-		if (
-			process.env.NODE_ENV === "development" &&
-			formattedOptions.length === 0 &&
-			field.options
-		) {
+		if (process.env.NODE_ENV === "development" && formattedOptions.length === 0 && field.options) {
 			console.warn(
 				`CustomField "${field.fieldname}" has Select type but no valid options:`,
 				field.options,
@@ -156,9 +150,7 @@ export function getFieldPlaceholder(field: FrappeField): string {
  * @param {Function} getFieldOptionsFn - Function to get field options
  * @returns {*} - Default value or empty string
  */
-export function getFieldDefaultValue(
-	field: FrappeField,
-): string | number | boolean {
+export function getFieldDefaultValue(field: FrappeField): string | number | boolean {
 	// For checkbox fields, handle 0/1 values explicitly
 	if (field.fieldtype === "Check") {
 		if (field.default_value === 1 || field.default_value === "1") {

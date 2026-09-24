@@ -5,9 +5,24 @@ import frappe
 from frappe import _
 from frappe.model.document import Document
 from frappe.model.naming import append_number_if_name_exists
-from frappe.utils.data import get_time, time_diff_in_seconds
+from frappe.utils.data import get_datetime, get_time, time_diff_in_seconds
 
-from buzz.utils import only_if_app_installed
+from buzz.api.forms.fields import validate_excluded_fields
+from buzz.utils import get_time_zone_label, only_if_app_installed
+
+# Top-level dashboard route segments (/b/<segment>) an event route must not shadow.
+RESERVED_EVENT_ROUTES = {
+	"account",
+	"bookings",
+	"booking-success",
+	"tickets",
+	"register",
+	"register-interest",
+	"check-in",
+	"book-tickets",
+	"event-proposal",
+	"events",
+}
 
 
 class BuzzEvent(Document):
@@ -33,6 +48,7 @@ class BuzzEvent(Document):
 		attach_email_ticket: DF.Check
 		auto_send_pitch_deck: DF.Check
 		banner_image: DF.AttachImage | None
+		booking_confirmation_email_template: DF.Link | None
 		card_image: DF.AttachImage | None
 		category: DF.Link
 		custom_forms: DF.Table[BuzzEventForm]
@@ -41,19 +57,21 @@ class BuzzEvent(Document):
 		end_time: DF.Time
 		external_registration_page: DF.Check
 		featured_speakers: DF.Table[EventFeaturedSpeaker]
-		free_webinar: DF.Check
+		free_event: DF.Check
 		guest_verification_method: DF.Literal["None", "Email OTP", "Phone OTP"]
 		host: DF.Link
 		is_published: DF.Check
 		medium: DF.Literal["In Person", "Online"]
 		meta_image: DF.AttachImage | None
 		name: DF.Int | None
+		offline_acknowledgement_email_template: DF.Link | None
 		payment_gateways: DF.Table[EventPaymentGateway]
 		proposal: DF.Link | None
 		registration_url: DF.Data | None
 		registrations_close_at: DF.Datetime | None
 		route: DF.Data | None
 		schedule: DF.Table[ScheduleItem]
+		send_booking_confirmation_email: DF.Check
 		send_ticket_email: DF.Check
 		short_description: DF.SmallText | None
 		show_sponsorship_section: DF.Check
@@ -69,6 +87,7 @@ class BuzzEvent(Document):
 		ticket_email_template: DF.Link | None
 		ticket_print_format: DF.Link | None
 		time_zone: DF.Autocomplete | None
+		time_zone_label: DF.Data | None
 		title: DF.Data
 		venue: DF.Link | None
 	# end: auto-generated types
@@ -79,6 +98,23 @@ class BuzzEvent(Document):
 		self.validate_route()
 		self.validate_tax_settings()
 		self.validate_guest_verification_config()
+		self.validate_custom_forms()
+		self.set_time_zone_label()
+
+	def set_time_zone_label(self):
+		# validate runs before the mandatory check, so dates may still be empty here
+		if not (self.time_zone and self.start_date and self.start_time):
+			self.time_zone_label = ""
+			return
+
+		# computed at event start so DST zones get the abbreviation in effect then
+		event_start = get_datetime(f"{self.start_date} {self.start_time}")
+		self.time_zone_label = get_time_zone_label(self.time_zone, event_start)
+
+	def validate_custom_forms(self):
+		for form in self.custom_forms:
+			if form.excluded_fields:
+				validate_excluded_fields(form.form_doctype, form.excluded_fields)
 
 	def validate_schedule(self):
 		end_date = self.end_date or self.start_date
@@ -138,6 +174,13 @@ class BuzzEvent(Document):
 			route = frappe.website.utils.cleanup_page_name(self.title).replace("_", "-")
 			self.route = append_number_if_name_exists("Buzz Event", route, fieldname="route")
 
+		# Compared lowercased: vue-router matches paths case-insensitively, so a
+		# route like "Account" shadows /b/account just as "account" would.
+		if (self.route or "").lower() in RESERVED_EVENT_ROUTES:
+			frappe.throw(
+				_("'{0}' is a reserved route and cannot be used as an event route.").format(self.route)
+			)
+
 	def validate_guest_verification_config(self):
 		"""Ensure email/SMS is configured when OTP verification is enabled."""
 		if frappe.in_test or not self.allow_guest_booking:
@@ -153,7 +196,6 @@ class BuzzEvent(Document):
 					title=frappe._("Email Not Configured"),
 				)
 
-	@frappe.whitelist()
 	def after_insert(self):
 		self.create_default_records()
 
@@ -196,8 +238,30 @@ class BuzzEvent(Document):
 
 		return zoom_webinar
 
+	@frappe.whitelist()
+	@only_if_app_installed("zoom_integration", raise_exception=True)
+	def create_meeting_on_zoom(self):
+		if not self.end_time:
+			frappe.throw(_("End time is needed for Zoom Meeting creation"))
+
+		zoom_meeting = frappe.get_doc(
+			{
+				"doctype": "Zoom Meeting",
+				"title": self.title,
+				"date": self.start_date,
+				"start_time": self.start_time,
+				"duration": int(time_diff_in_seconds(self.end_time, self.start_time)),
+				"timezone": self.time_zone,
+			}
+		).insert()
+
+		self.db_set("zoom_meeting", zoom_meeting.name)
+
+		return zoom_meeting
+
 	def on_update(self):
 		self.update_zoom_webinar()
+		self.update_zoom_meeting()
 
 	@only_if_app_installed("zoom_integration")
 	def update_zoom_webinar(self):
@@ -220,6 +284,28 @@ class BuzzEvent(Document):
 				}
 			)
 			webinar.save()
+
+	@only_if_app_installed("zoom_integration")
+	def update_zoom_meeting(self):
+		if not self.zoom_meeting:
+			return
+
+		if (
+			self.has_value_changed("start_date")
+			or self.has_value_changed("end_time")
+			or self.has_value_changed("start_time")
+			or self.has_value_changed("time_zone")
+		):
+			meeting = frappe.get_doc("Zoom Meeting", self.zoom_meeting)
+			meeting.update(
+				{
+					"date": self.start_date,
+					"start_time": self.start_time,
+					"duration": int(time_diff_in_seconds(self.end_time, self.start_time)),
+					"timezone": self.time_zone,
+				}
+			)
+			meeting.save()
 
 
 @frappe.whitelist()

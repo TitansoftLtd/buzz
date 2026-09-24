@@ -1,6 +1,8 @@
-import { clearBookingCache } from "@/utils"
 import { createResource } from "frappe-ui"
 import { computed, reactive } from "vue"
+
+import { clearBookingCache } from "@/utils"
+
 import { userResource } from "./user"
 
 interface LoginParams {
@@ -8,11 +10,11 @@ interface LoginParams {
 	password: string
 }
 
-export function sessionUser() {
+export function sessionUser(): string {
 	const cookies = new URLSearchParams(document.cookie.split("; ").join("&"))
-	let _sessionUser = cookies.get("user_id")
-	if (_sessionUser === "Guest") {
-		_sessionUser = null
+	const _sessionUser = cookies.get("user_id")
+	if (!_sessionUser || _sessionUser === "Guest") {
+		return ""
 	}
 	return _sessionUser
 }
@@ -27,9 +29,7 @@ export const session = reactive({
 			}
 		},
 		onSuccess() {
-			userResource.reload()
-			session.user = sessionUser()
-			session.login.reset()
+			window.location.reload()
 		},
 	}),
 	logout: createResource({

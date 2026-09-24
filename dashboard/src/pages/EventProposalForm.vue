@@ -5,17 +5,17 @@
 		</div>
 
 		<div v-else-if="submitted" class="text-center">
-			<div class="bg-surface-green-1 border border-outline-green-1 rounded-lg p-8">
-				<LucideCheckCircle class="w-16 h-16 text-ink-green-2 mx-auto mb-4" />
-				<h2 class="text-ink-green-3 font-semibold text-xl mb-2">
-					{{ form_data.success_title }}
+			<div class="bg-surface-green-1 border border-outline-green-1 rounded-6 p-8">
+				<LucideCheckCircle class="w-16 h-16 text-ink-green-6 mx-auto mb-4" />
+				<h2 class="text-ink-green-6 text-2xl-semibold mb-2">
+					{{ form_data?.success_title }}
 				</h2>
 				<div
 					v-if="rendered_success_message"
-					class="prose prose-sm max-w-none text-ink-green-2"
+					class="prose prose-sm max-w-none text-ink-green-6"
 					v-html="rendered_success_message"
 				></div>
-				<p v-else class="text-ink-green-2">
+				<p v-else class="text-ink-green-6">
 					{{ __("Your proposal has been received.") }}
 				</p>
 			</div>
@@ -28,38 +28,25 @@
 
 		<div v-else-if="form_data">
 			<form
-				class="bg-surface-white border border-outline-gray-1 rounded-lg"
+				class="bg-surface-base border border-outline-gray-1 rounded-6"
 				@submit.prevent="handleSubmit"
 			>
 				<div class="px-6 py-5 border-b border-outline-gray-1">
-					<h1 class="text-ink-gray-9 font-bold text-2xl">
+					<h1 class="text-ink-gray-9 text-3xl-bold">
 						{{ form_data.banner_title }}
 					</h1>
 				</div>
 
-				<div class="p-6 space-y-6">
-					<div
-						v-for="(section, section_index) in field_sections"
-						:key="section_index"
-						class="grid gap-4"
-						:style="{
-							gridTemplateColumns: `repeat(${section.length}, minmax(0, 1fr))`,
-						}"
-					>
-						<div
-							v-for="(column, column_index) in section"
-							:key="column_index"
-							class="space-y-4"
-						>
+				<div class="p-6">
+					<FormFieldSections :fields="form_data.form_fields">
+						<template #field="{ field }">
 							<CustomFieldInput
-								v-for="field in column"
-								:key="field.fieldname"
 								:field="{ ...field, mandatory: field.reqd }"
 								:model-value="form_values[field.fieldname]"
 								@update:model-value="form_values[field.fieldname] = $event"
 							/>
-						</div>
-					</div>
+						</template>
+					</FormFieldSections>
 				</div>
 
 				<div class="px-6 pb-6">
@@ -77,12 +64,12 @@
 		</div>
 
 		<div v-else-if="load_error" class="text-center">
-			<div class="bg-surface-amber-1 border border-outline-amber-1 rounded-lg p-8">
-				<LucideAlertCircle class="w-16 h-16 text-ink-amber-3 mx-auto mb-4" />
-				<h2 class="text-ink-amber-3 font-semibold text-xl mb-2">
+			<div class="bg-surface-amber-1 border border-outline-amber-1 rounded-6 p-8">
+				<LucideAlertCircle class="w-16 h-16 text-ink-amber-6 mx-auto mb-4" />
+				<h2 class="text-ink-amber-6 text-2xl-semibold mb-2">
 					{{ __("Not Found") }}
 				</h2>
-				<p class="text-ink-amber-2">
+				<p class="text-ink-amber-5">
 					{{ load_error }}
 				</p>
 			</div>
@@ -90,84 +77,75 @@
 	</div>
 </template>
 
-<script setup>
-import CustomFieldInput from "@/components/CustomFieldInput.vue";
-import LoginRequired from "@/components/LoginRequired.vue";
-import { Button, Spinner, createResource, toast } from "frappe-ui";
-import { marked } from "marked";
-import { computed, reactive, ref } from "vue";
-import LucideAlertCircle from "~icons/lucide/alert-circle";
-import LucideCheckCircle from "~icons/lucide/check-circle";
+<script setup lang="ts">
+import { Button, Spinner, createResource, toast, usePageMeta } from "frappe-ui"
+import { marked } from "marked"
+import { computed, reactive, ref } from "vue"
+import LucideAlertCircle from "~icons/lucide/alert-circle"
+import LucideCheckCircle from "~icons/lucide/check-circle"
 
-const form_data = ref(null);
-const form_values = reactive({});
-const submitted = ref(false);
-const login_required = ref(false);
-const load_error = ref(null);
+import CustomFieldInput from "@/components/CustomFieldInput.vue"
+import FormFieldSections from "@/components/FormFieldSections.vue"
+import LoginRequired from "@/components/LoginRequired.vue"
+import type { FrappeError, FrappeField } from "@/types"
+
+interface ProposalFormData {
+	success_message?: string
+	banner_title?: string
+	form_fields?: FrappeField[]
+	[key: string]: any
+}
+
+const form_data = ref<ProposalFormData | null>(null)
+const form_values = reactive<Record<string, any>>({})
+const submitted = ref(false)
+const login_required = ref(false)
+const load_error = ref<string | null>(null)
+
+usePageMeta(() => {
+	const bannerTitle = form_data.value?.banner_title
+	return bannerTitle ? { title: bannerTitle } : null
+})
 
 const rendered_success_message = computed(() => {
-	const msg = form_data.value?.success_message;
-	if (!msg) return "";
-	return marked(msg);
-});
-
-const field_sections = computed(() => {
-	const fields = form_data.value?.form_fields || [];
-	const sections = [];
-	let current_section = [[]];
-	for (const field of fields) {
-		if (field.fieldtype === "Section Break") {
-			if (current_section.some((col) => col.length)) {
-				sections.push(current_section);
-			}
-			current_section = [[]];
-			continue;
-		}
-		if (field.fieldtype === "Column Break") {
-			current_section.push([]);
-			continue;
-		}
-		current_section[current_section.length - 1].push(field);
-	}
-	if (current_section.some((col) => col.length)) {
-		sections.push(current_section);
-	}
-	return sections;
-});
+	const msg = form_data.value?.success_message
+	if (!msg) return ""
+	return marked(msg)
+})
 
 const form_data_resource = createResource({
 	url: "buzz.api.forms.get_event_proposal_form_data",
 	auto: true,
-	onSuccess: (data) => {
-		form_data.value = data;
+	onSuccess: (data: ProposalFormData) => {
+		form_data.value = data
 		for (const field of data.form_fields || []) {
 			if (field.default) {
-				form_values[field.fieldname] = field.default;
+				form_values[field.fieldname] = field.default
 			}
 		}
 	},
-	onError: (err) => {
-		if (err.exc_type === "AuthenticationError") {
-			login_required.value = true;
-			return;
+	onError: (err: FrappeError) => {
+		if (err.exc_type === "LoginRequired") {
+			login_required.value = true
+			return
 		}
-		load_error.value = err.messages?.[0] || __("Form not found");
+		load_error.value = err.messages?.[0] || __("Form not found")
 	},
-});
+})
 
 const submit_resource = createResource({
 	url: "buzz.api.forms.submit_event_proposal",
 	onSuccess: () => {
-		submitted.value = true;
+		submitted.value = true
 	},
-	onError: (err) => {
-		const messages = err.messages || [];
-		const msg = messages.find((m) => typeof m === "string" && m.trim());
-		toast.error(msg || __("Failed to submit proposal"));
+	onError: (err: FrappeError) => {
+		const messages = err.messages || []
+		const msg = messages.find((m) => typeof m === "string" && m.trim())
+		toast.error(msg || __("Failed to submit proposal"))
 	},
-});
+})
 
 function handleSubmit() {
-	submit_resource.submit({ data: { ...form_values } });
+	submit_resource.submit({ data: { ...form_values } })
 }
 </script>

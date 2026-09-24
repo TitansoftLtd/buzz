@@ -10,10 +10,10 @@
   "column_break_esac",
   "status",
   "event",
+  "section_break_gusn",
+  "speakers",
   "section_break_yqfb",
   "description",
-  "column_break_kemm",
-  "speakers",
   "section_break_ouiw",
   "phone",
   "section_break_additional",
@@ -39,9 +39,9 @@
   {
    "default": "Review Pending",
    "fieldname": "status",
-   "fieldtype": "Select",
+   "fieldtype": "Link",
    "label": "Status",
-   "options": "Review Pending\nShortlisted\nAccepted\nRejected"
+   "options": "Talk Proposal Status"
   },
   {
    "fieldname": "event",
@@ -59,10 +59,6 @@
    "fieldname": "description",
    "fieldtype": "Text Editor",
    "label": "Description"
-  },
-  {
-   "fieldname": "column_break_kemm",
-   "fieldtype": "Column Break"
   },
   {
    "fieldname": "speakers",
@@ -89,6 +85,10 @@
    "fieldtype": "Table",
    "label": "Additional Fields",
    "options": "Additional Field"
+  },
+  {
+   "fieldname": "section_break_gusn",
+   "fieldtype": "Section Break"
   }
  ],
  "grid_page_length": 50,
@@ -99,7 +99,7 @@
    "link_fieldname": "proposal"
   }
  ],
- "modified": "2026-03-23 17:28:23.254661",
+ "modified": "2026-07-22 12:00:00.000000",
  "modified_by": "Administrator",
  "module": "Proposals",
  "name": "Talk Proposal",
@@ -134,7 +134,6 @@
    "create": 1,
    "email": 1,
    "export": 1,
-   "if_owner": 1,
    "print": 1,
    "read": 1,
    "report": 1,
@@ -149,8 +148,28 @@
  "sort_order": "DESC",
  "states": [
   {
+   "color": "Orange",
+   "title": "Review Pending"
+  },
+  {
+   "color": "Blue",
+   "title": "Shortlisted"
+  },
+  {
    "color": "Green",
    "title": "Accepted"
+  },
+  {
+   "color": "Red",
+   "title": "Rejected"
+  },
+  {
+   "color": "Purple",
+   "title": "Replied"
+  },
+  {
+   "color": "Gray",
+   "title": "Duplicate"
   }
  ],
  "title_field": "title",

@@ -1,11 +1,3 @@
-import { createApp } from "vue"
-
-import App from "./App.vue"
-import router from "./router"
-import { initSocket } from "./socket"
-
-import translationPlugin from "./translation"
-
 import {
 	Alert,
 	Badge,
@@ -13,20 +5,24 @@ import {
 	Dialog,
 	ErrorMessage,
 	FormControl,
-	Input,
 	TextInput,
 	frappeRequest,
-	pageMetaPlugin,
 	resourcesPlugin,
 	setConfig,
 } from "frappe-ui"
+import { createApp } from "vue"
+
+import App from "./App.vue"
+import { applyLanguageFromQuery } from "./composables/useLanguage"
+import router from "./router"
+import { initSocket } from "./socket"
+import translationPlugin from "./translation"
 
 import "./index.css"
 
 const globalComponents = {
 	Button,
 	TextInput,
-	Input,
 	FormControl,
 	ErrorMessage,
 	Dialog,
@@ -38,10 +34,12 @@ const app = createApp(App)
 
 setConfig("resourceFetcher", frappeRequest)
 
+// Before the router runs and may redirect away from the query.
+applyLanguageFromQuery(router)
+
 app.use(router)
 app.use(translationPlugin)
 app.use(resourcesPlugin)
-app.use(pageMetaPlugin)
 
 const socket = initSocket()
 app.config.globalProperties.$socket = socket

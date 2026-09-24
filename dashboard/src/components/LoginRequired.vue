@@ -1,7 +1,7 @@
 <template>
 	<div class="flex flex-col items-center justify-center py-16 px-4">
 		<div class="text-center max-w-md">
-			<h2 class="text-xl font-semibold text-ink-gray-8 mb-2">
+			<h2 class="text-2xl-semibold text-ink-gray-8 mb-2">
 				{{ __("Login Required") }}
 			</h2>
 			<p class="text-ink-gray-6 mb-6">
@@ -12,16 +12,19 @@
 	</div>
 </template>
 
-<script setup>
-import { useLoginDialog } from "@/composables/useLoginDialog";
-import { Button } from "frappe-ui";
+<script setup lang="ts">
+import { Button } from "frappe-ui"
 
-defineProps({
-	message: {
-		type: String,
-		default: "Please log in to continue.",
+import { useLoginDialog } from "@/composables/useLoginDialog"
+
+withDefaults(
+	defineProps<{
+		message?: string
+	}>(),
+	{
+		message: "Please log in to continue.",
 	},
-});
+)
 
-const { open: openLogin } = useLoginDialog();
+const { open: openLogin } = useLoginDialog()
 </script>

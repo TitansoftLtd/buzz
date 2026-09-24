@@ -1,5 +1,6 @@
-import { userResource } from "@/data/user"
 import { type RouteRecordRaw, createRouter, createWebHistory } from "vue-router"
+
+import { userResource } from "@/data/user"
 
 const routes: RouteRecordRaw[] = [
 	{
@@ -14,7 +15,7 @@ const routes: RouteRecordRaw[] = [
 		component: () => import("@/pages/CheckInScanner.vue"),
 	},
 	{
-		path: "/book-tickets/:eventRoute",
+		path: "/register/:eventRoute",
 		props: true,
 		name: "event-booking",
 		meta: { isPublic: true },
@@ -27,17 +28,26 @@ const routes: RouteRecordRaw[] = [
 		component: () => import("@/pages/EventProposalForm.vue"),
 	},
 	{
-		path: "/events/:eventRoute/forms/:formRoute",
+		path: "/booking-success/:bookingId",
+		name: "booking-success",
 		props: true,
-		name: "custom-form",
 		meta: { isPublic: true },
-		component: () => import("@/pages/CustomFormPage.vue"),
+		component: () => import("@/pages/BookingSuccess.vue"),
 	},
 	{
 		path: "/register-interest/:campaign",
 		props: true,
 		name: "register-interest",
 		component: () => import("@/pages/RegisterInterest.vue"),
+	},
+	// Back-compat: old in-app paths redirect to the shortened scheme.
+	{
+		path: "/book-tickets/:eventRoute",
+		redirect: (to) => ({ name: "event-booking", params: to.params }),
+	},
+	{
+		path: "/events/:eventRoute/forms/:formRoute",
+		redirect: (to) => ({ name: "custom-form", params: to.params }),
 	},
 	{
 		path: "/bookings",
@@ -113,10 +123,19 @@ const routes: RouteRecordRaw[] = [
 			},
 		],
 	},
+	// Event custom form: /b/<event>/<form>. Declared last — two dynamic segments,
+	// so it only matches after every static route above has been ruled out.
+	{
+		path: "/:eventRoute/:formRoute",
+		props: true,
+		name: "custom-form",
+		meta: { isPublic: true },
+		component: () => import("@/pages/CustomFormPage.vue"),
+	},
 ]
 
 const router = createRouter({
-	history: createWebHistory("/dashboard"),
+	history: createWebHistory("/b"),
 	routes,
 })
 
@@ -127,6 +146,16 @@ router.beforeEach(async (to, from, next) => {
 		// user is not logged in — Layout will show LoginRequired for protected routes
 	}
 	next()
+})
+
+const defaultTitle = document.title
+
+router.afterEach((to, from) => {
+	// Pages set their own title via usePageMeta, which never restores it on
+	// unmount. Reset here so a page without one doesn't keep showing the
+	// previous page's title. Same-path navigation keeps the title: usePageMeta's
+	// watcher won't refire when its data is unchanged, so resetting would stick.
+	if (to.path !== from.path) document.title = defaultTitle
 })
 
 export default router

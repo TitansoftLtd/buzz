@@ -11,9 +11,10 @@
 		/>
 	</div>
 
-	<!-- Desktop: Tabs for navigation -->
+	<!-- Desktop: Tabs for navigation. Unbound in route mode, so selection follows
+	     the URL; the key re-mounts the list when the async Sponsorships tab lands. -->
 	<div class="hidden sm:block">
-		<Tabs as="div" v-model="tabIndex" :tabs="tabs">
+		<Tabs as="div" :key="tabs.length" :tabs="tabs">
 			<template #tab-panel>
 				<div></div>
 			</template>
@@ -25,66 +26,88 @@
 	</div>
 </template>
 
-<script setup>
-import ProfileView from "@/components/ProfileView.vue";
-import { Tabs } from "frappe-ui";
-import { computed, ref, watch } from "vue";
-import { useRoute, useRouter } from "vue-router";
-import LucideCalendarDays from "~icons/lucide/calendar-days";
-import LucideCircleDollarSign from "~icons/lucide/circle-dollar-sign";
-import LucideMegaphone from "~icons/lucide/megaphone";
-import LucideTicket from "~icons/lucide/ticket";
+<script setup lang="ts">
+import { Tabs, createResource } from "frappe-ui"
+import { computed, watch } from "vue"
+import { useRoute, useRouter } from "vue-router"
+import LucideCalendarDays from "~icons/lucide/calendar-days"
+import LucideCircleDollarSign from "~icons/lucide/circle-dollar-sign"
+import LucideMegaphone from "~icons/lucide/megaphone"
+import LucideTicket from "~icons/lucide/ticket"
 
-const route = useRoute();
-const router = useRouter();
+import ProfileView from "@/components/ProfileView.vue"
 
-const tabs = [
-	{
-		label: __("My Bookings"),
-		route: "/account/bookings",
-		icon: LucideCalendarDays,
-	},
-	{ label: __("My Tickets"), route: "/account/tickets", icon: LucideTicket },
-	{
-		label: __("Talk Proposals"),
-		route: "/account/proposals",
-		icon: LucideMegaphone,
-	},
-	{
-		label: __("Sponsorships"),
-		route: "/account/sponsorships",
-		icon: LucideCircleDollarSign,
-	},
-];
+const route = useRoute()
+const router = useRouter()
 
-const selectOptions = tabs.map((tab) => ({
-	label: tab.label,
-	value: tab.route,
-}));
+const sponsorships = createResource({
+	url: "buzz.api.sponsorships.get_user_sponsorship_inquiries",
+	auto: true,
+	cacheKey: "account-sponsorships-check",
+	onError: console.error,
+})
+
+const tabs = computed(() => {
+	const accountTabs = [
+		{
+			value: "/account/bookings",
+			label: __("My Bookings"),
+			route: "/account/bookings",
+			iconLeft: LucideCalendarDays,
+		},
+		{
+			value: "/account/tickets",
+			label: __("My Tickets"),
+			route: "/account/tickets",
+			iconLeft: LucideTicket,
+		},
+		{
+			value: "/account/proposals",
+			label: __("Talk Proposals"),
+			route: "/account/proposals",
+			iconLeft: LucideMegaphone,
+		},
+	]
+
+	if (sponsorships.data?.length) {
+		accountTabs.push({
+			value: "/account/sponsorships",
+			label: __("Sponsorships"),
+			route: "/account/sponsorships",
+			iconLeft: LucideCircleDollarSign,
+		})
+	}
+
+	return accountTabs
+})
+
+const selectOptions = computed(() =>
+	tabs.value.map((tab) => ({
+		label: tab.label,
+		value: tab.route,
+	})),
+)
 
 const currentTabRoute = computed(() => {
-	const tab = tabs.find((tab) => route.path.startsWith(tab.route));
-	return tab ? tab.route : tabs[0].route;
-});
+	const tab = tabs.value.find((candidate) => route.path.startsWith(candidate.route))
+	return tab ? tab.route : tabs.value[0].route
+})
 
-function onSelectChange(value) {
-	router.push(value);
+function onSelectChange(value: string) {
+	router.push(value)
 }
 
-// Find the tab index based on current route path
-const getTabIndexFromRoute = () => {
-	const currentPath = route.path;
-	const index = tabs.findIndex((tab) => currentPath.startsWith(tab.route));
-	return index >= 0 ? index : 0;
-};
-
-const tabIndex = ref(getTabIndexFromRoute());
-
-// Watch for route changes and update tab index
+// An unknown /account/* path matches no tab, so send it to the first one — but
+// only once the async Sponsorships tab has settled, or /account/sponsorships
+// would bounce away before its tab exists.
 watch(
-	() => route.path,
+	[() => route.path, () => tabs.value.length, () => sponsorships.loading],
 	() => {
-		tabIndex.value = getTabIndexFromRoute();
-	}
-);
+		const onKnownTab = tabs.value.some((tab) => route.path.startsWith(tab.route))
+		if (!onKnownTab && !sponsorships.loading && route.path.startsWith("/account/")) {
+			router.replace(tabs.value[0].route)
+		}
+	},
+	{ immediate: true },
+)
 </script>

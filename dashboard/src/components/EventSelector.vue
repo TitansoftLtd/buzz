@@ -2,8 +2,8 @@
 	<div class="mb-6 size-full">
 		<!-- Header - only show when there are events -->
 		<h2
-			v-if="eventsResource.data?.length > 0"
-			class="text-lg font-semibold mb-4 text-gray-900 dark:text-white"
+			v-if="(eventsResource.data?.length ?? 0) > 0"
+			class="text-lg-semibold mb-4 text-gray-900 dark:text-white"
 		>
 			{{ __("Select Event") }}
 		</h2>
@@ -34,7 +34,7 @@
 				emptyState: {
 					title: __('No Events Available'),
 					description: __(
-						'There are currently no active events available for check-in. Events may be scheduled for later dates or may need to be published.'
+						'There are currently no active events available for check-in. Events may be scheduled for later dates or may need to be published.',
 					),
 					button: {
 						label: __('Refresh Events'),
@@ -47,44 +47,47 @@
 	</div>
 </template>
 
-<script setup>
-import { ListView, Spinner, createListResource, dayjsLocal } from "frappe-ui";
+<script setup lang="ts">
+import { Spinner, createListResource, dayjsLocal } from "frappe-ui"
+import { ListView } from "frappe-ui/experimental"
+
+import type { BuzzEvent } from "@/types"
 
 defineProps({
 	selectedEvent: {
 		type: Object,
 		default: null,
 	},
-});
+})
 
-const emit = defineEmits(["select"]);
+const emit = defineEmits(["select"])
 
 const columns = [
 	{ label: __("Event"), key: "title", width: 1.5 },
 	{ label: __("Starts At"), key: "starts_at" },
 	{ label: __("Ends At"), key: "ends_at" },
-];
+]
 
-const formatTimestamp = (date, time) => {
-	let formattedDate = "";
-	let formattedTime = "";
+const formatTimestamp = (date?: string, time?: string) => {
+	let formattedDate = ""
+	let formattedTime = ""
 
 	if (date || time) {
-		const dateTimeStr = date ? `${date}${time ? "T" + time : "T00:00:00"}` : undefined;
+		const dateTimeStr = date ? `${date}${time ? "T" + time : "T00:00:00"}` : undefined
 
-		const parsed = dayjsLocal(dateTimeStr);
+		const parsed = dayjsLocal(dateTimeStr)
 
 		if (parsed.isValid()) {
-			formattedDate = parsed.format("MMM DD, YYYY");
-			formattedTime = parsed.format("h:mm A");
+			formattedDate = parsed.format("MMM DD, YYYY")
+			formattedTime = parsed.format("h:mm A")
 		}
 	}
 
-	if (!formattedDate && !formattedTime) return "No date specified";
-	if (formattedDate && !formattedTime) return formattedDate;
-	if (!formattedDate && formattedTime) return formattedTime;
-	return `${formattedDate} ${formattedTime}`;
-};
+	if (!formattedDate && !formattedTime) return "No date specified"
+	if (formattedDate && !formattedTime) return formattedDate
+	if (!formattedDate && formattedTime) return formattedTime
+	return `${formattedDate} ${formattedTime}`
+}
 
 const eventsResource = createListResource({
 	doctype: "Buzz Event",
@@ -95,16 +98,16 @@ const eventsResource = createListResource({
 		end_date: [">=", dayjsLocal().format("YYYY-MM-DD")],
 	},
 	auto: true,
-	transform(data) {
-		return data.map((event) => ({
+	transform(data: BuzzEvent[]) {
+		return data.map((event: BuzzEvent) => ({
 			...event,
 			starts_at: formatTimestamp(event.start_date, event.start_time),
 			ends_at: formatTimestamp(event.end_date, event.end_time),
-		}));
+		}))
 	},
-});
+})
 
-const handleEventSelect = (event) => {
-	emit("select", event);
-};
+const handleEventSelect = (event: BuzzEvent) => {
+	emit("select", event)
+}
 </script>

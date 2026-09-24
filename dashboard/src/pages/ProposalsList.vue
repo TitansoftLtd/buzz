@@ -7,7 +7,7 @@
 			row-key="name"
 			:options="{
 				selectable: false,
-				getRowRoute: (row) => ({
+				getRowRoute: (row: Record<string, any>) => ({
 					name: 'proposal-details',
 					params: { proposalId: row.name },
 				}),
@@ -17,7 +17,7 @@
 				},
 			}"
 		>
-			<template #cell="{ item, row, column }">
+			<template #cell="{ item, row, column, align }">
 				<Badge
 					v-if="column.key === 'status'"
 					:theme="getStatusTheme(row.status)"
@@ -26,7 +26,7 @@
 				>
 					{{ item }}
 				</Badge>
-				<span v-else>{{ item }}</span>
+				<ListRowItem v-else :column="column" :row="row" :item="item" :align="align" />
 			</template>
 		</ListView>
 
@@ -34,7 +34,10 @@
 			<Spinner />
 		</div>
 
-		<div v-else-if="proposals.data && proposals.data.length === 0" class="text-center py-8">
+		<div
+			v-else-if="proposals.data && (proposals.data as any[]).length === 0"
+			class="text-center py-8"
+		>
 			<div class="text-ink-gray-5 text-lg mb-2">
 				{{ __("No proposals yet") }}
 			</div>
@@ -45,46 +48,37 @@
 	</div>
 </template>
 
-<script setup>
-import { session } from "@/data/session";
-import { Badge, ListView, Spinner, dayjsLocal, useList } from "frappe-ui";
+<script setup lang="ts">
+import { Badge, Spinner, createResource, dayjsLocal } from "frappe-ui"
+import { ListRowItem, ListView } from "frappe-ui/experimental"
+
+import { useProposalStatuses } from "@/composables/useProposalStatuses"
+import { session } from "@/data/session"
+import type { ProposalListItem } from "@/types"
+
+const { getStatusTheme } = useProposalStatuses()
 
 const columns = [
-	{ label: __("Title"), key: "title" },
-	{ label: __("Event"), key: "event_title" },
-	{ label: __("Status"), key: "status" },
-	{ label: __("Submitted"), key: "formatted_creation" },
-];
+	{ label: __("Title"), key: "title", width: "240px" },
+	{ label: __("Event"), key: "event_title", width: "180px" },
+	{ label: __("Status"), key: "status", width: "130px" },
+	{ label: __("Submitted"), key: "formatted_creation", width: "120px" },
+]
 
-const proposals = useList({
-	doctype: "Talk Proposal",
-	fields: ["name", "title", "event.title as event_title", "status", "creation"],
-	filters: {
-		submitted_by: session.user,
-	},
-	orderBy: "creation desc",
+interface ProposalRow extends ProposalListItem {
+	formatted_creation: string
+}
+
+// Server-side scoping (submitter or listed speaker) instead of a client
+// filter, so guest-submitted proposals show up for their speakers too.
+const proposals = createResource({
+	url: "buzz.api.proposals.get_my_proposals",
 	auto: true,
-	cacheKey: ["proposals-list", session.user],
-	transform(data) {
-		return data.map((proposal) => ({
+	cache: ["proposals-list", session.user],
+	transform: (data: ProposalListItem[]): ProposalRow[] =>
+		data.map((proposal) => ({
 			...proposal,
 			formatted_creation: dayjsLocal(proposal.creation).format("MMM DD, YYYY"),
-		}));
-	},
-});
-
-const getStatusTheme = (status) => {
-	switch (status) {
-		case "Accepted":
-			return "green";
-		case "Shortlisted":
-			return "blue";
-		case "Review Pending":
-			return "orange";
-		case "Rejected":
-			return "red";
-		default:
-			return "gray";
-	}
-};
+		})),
+})
 </script>

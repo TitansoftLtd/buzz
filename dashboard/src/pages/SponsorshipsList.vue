@@ -7,7 +7,7 @@
 			row-key="name"
 			:options="{
 				selectable: false,
-				getRowRoute: (row) => ({
+				getRowRoute: (row: Record<string, any>) => ({
 					name: 'sponsorship-details',
 					params: { enquiryId: row.name },
 				}),
@@ -42,10 +42,7 @@
 			<Spinner />
 		</div>
 
-		<div
-			v-else-if="sponsorships.data && sponsorships.data.length === 0"
-			class="text-center py-8"
-		>
+		<div v-else-if="sponsorships.data && sponsorships.data.length === 0" class="text-center py-8">
 			<div class="text-ink-gray-5 text-lg mb-2">
 				{{ __("No sponsorship inquiries yet") }}
 			</div>
@@ -56,9 +53,10 @@
 	</div>
 </template>
 
-<script setup>
-import { Badge, ListView, Spinner, createResource } from "frappe-ui";
-import { dayjsLocal } from "frappe-ui";
+<script setup lang="ts">
+import { Badge, Spinner, createResource } from "frappe-ui"
+import { dayjsLocal } from "frappe-ui"
+import { ListView } from "frappe-ui/experimental"
 
 const columns = [
 	{ label: __("Company"), key: "company_name" },
@@ -67,34 +65,34 @@ const columns = [
 	{ label: __("Status"), key: "status" },
 	{ label: __("Sponsorship"), key: "sponsorship_status" },
 	{ label: __("Submitted"), key: "formatted_creation" },
-];
+]
 
 const sponsorships = createResource({
-	url: "buzz.api.get_user_sponsorship_inquiries",
+	url: "buzz.api.sponsorships.get_user_sponsorship_inquiries",
 	auto: true,
 	cacheKey: "sponsorships-list",
 	onError: console.error,
-	transform(data) {
-		return data.map((inquiry) => ({
+	transform(data: any[]) {
+		return data.map((inquiry: Record<string, any>) => ({
 			...inquiry,
 			formatted_creation: dayjsLocal(inquiry.creation).format("MMM DD, YYYY"),
 			sponsorship_status: inquiry.has_sponsor ? __("Sponsored") : __("Inquiry Only"),
-		}));
+		}))
 	},
-});
+})
 
-const getStatusTheme = (status) => {
+const getStatusTheme = (status: string) => {
 	switch (status) {
 		case "Paid":
-			return "green";
+			return "green"
 		case "Payment Pending":
-			return "orange";
+			return "amber"
 		case "Approval Pending":
-			return "blue";
+			return "blue"
 		case "Withdrawn":
-			return "red";
+			return "red"
 		default:
-			return "gray";
+			return "gray"
 	}
-};
+}
 </script>

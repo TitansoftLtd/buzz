@@ -1,5 +1,5 @@
 <template>
-	<div>
+	<div class="min-h-screen bg-surface-base text-ink-gray-8">
 		<div>
 			<Navbar />
 		</div>
@@ -19,20 +19,21 @@
 	</div>
 </template>
 
-<script setup>
-import LoginRequired from "@/components/LoginRequired.vue";
-import Navbar from "@/components/Navbar.vue";
-import { session } from "@/data/session";
-import { Spinner } from "frappe-ui";
-import { computed, ref } from "vue";
-import { useRoute, useRouter } from "vue-router";
+<script setup lang="ts">
+import { Spinner } from "frappe-ui"
+import { computed, ref } from "vue"
+import { useRoute, useRouter } from "vue-router"
 
-const route = useRoute();
-const router = useRouter();
-const routerReady = ref(false);
-const requires_auth = computed(() => !route.meta?.isPublic);
+import LoginRequired from "@/components/LoginRequired.vue"
+import Navbar from "@/components/Navbar.vue"
+import { session } from "@/data/session"
+
+const route = useRoute()
+const router = useRouter()
+const routerReady = ref(false)
+const requires_auth = computed(() => !route.meta?.isPublic)
 
 router.isReady().then(() => {
-	routerReady.value = true;
-});
+	routerReady.value = true
+})
 </script>

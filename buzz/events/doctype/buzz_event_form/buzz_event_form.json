@@ -10,8 +10,10 @@
   "route",
   "copy_to_clipboard",
   "publish",
+  "login_required",
   "column_break_main",
   "auto_close_at",
+  "excluded_fields",
   "section_break_success",
   "success_title",
   "success_message",
@@ -43,6 +45,13 @@
    "label": "Publish"
   },
   {
+   "default": "0",
+   "fieldname": "login_required",
+   "fieldtype": "Check",
+   "in_list_view": 1,
+   "label": "Login Required?"
+  },
+  {
    "fieldname": "column_break_main",
    "fieldtype": "Column Break"
   },
@@ -50,6 +59,12 @@
    "fieldname": "auto_close_at",
    "fieldtype": "Datetime",
    "label": "Auto Close At"
+  },
+  {
+   "description": "Comma-separated field names to hide from the form (others are shown). Leave empty to show all. Mandatory fields cannot be hidden.",
+   "fieldname": "excluded_fields",
+   "fieldtype": "Small Text",
+   "label": "Excluded Fields"
   },
   {
    "fieldname": "section_break_success",
@@ -92,7 +107,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2026-04-14 19:33:17.779162",
+ "modified": "2026-05-21 16:15:20.760801",
  "modified_by": "Administrator",
  "module": "Events",
  "name": "Buzz Event Form",

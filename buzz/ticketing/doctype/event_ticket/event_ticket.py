@@ -5,7 +5,12 @@ import frappe
 from frappe.core.api.user_invitation import invite_by_email
 from frappe.model.document import Document
 
-from buzz.utils import generate_ics_file, generate_qr_code_file, only_if_app_installed
+from buzz.utils import (
+	generate_ics_file,
+	generate_qr_code_file,
+	only_if_app_installed,
+	render_email_template,
+)
 
 
 class EventTicket(Document):
@@ -67,27 +72,34 @@ class EventTicket(Document):
 		event_doc = frappe.get_cached_doc("Buzz Event", self.event)
 
 		if event_doc.zoom_webinar:
-			doc = {
-				"doctype": "Zoom Webinar Registration",
-				"webinar": event_doc.zoom_webinar,
+			session_ref = {"reference_doctype": "Zoom Webinar", "reference_name": event_doc.zoom_webinar}
+		elif event_doc.get("zoom_meeting"):
+			session_ref = {"reference_doctype": "Zoom Meeting", "reference_name": event_doc.zoom_meeting}
+		else:
+			return
+
+		registration = frappe.get_doc(
+			{
+				"doctype": "Zoom Session Registration",
+				**session_ref,
 				"email": self.attendee_email,
 				"first_name": self.first_name,
 				"last_name": self.last_name or "-",
 			}
-			registration = frappe.get_doc(doc).insert(ignore_permissions=True)
+		).insert(ignore_permissions=True)
 
-			try:
-				registration.submit()
-				# Store the registration reference on the ticket
-				self.db_set("zoom_webinar_registration", registration.name)
-			except Exception:
-				frappe.log_error("Failed to create registration on Zoom")
+		try:
+			registration.submit()
+			# Store the registration reference on the ticket (holds meeting or webinar registration)
+			self.db_set("zoom_session_registration", registration.name)
+		except Exception:
+			frappe.log_error("Failed to create registration on Zoom")
 
 	def send_user_invitation(self):
 		invite_by_email(
 			emails=self.attendee_email,
 			roles=["Buzz User"],
-			redirect_to_path="/dashboard/account/tickets",
+			redirect_to_path="/b/account/tickets",
 			app_name="buzz",
 		)
 
@@ -115,9 +127,7 @@ class EventTicket(Document):
 		}
 
 		if ticket_template:
-			from frappe.email.doctype.email_template.email_template import get_email_template
-
-			email_template = get_email_template(ticket_template, args)
+			email_template = render_email_template(ticket_template, args)
 			subject = email_template.get("subject")
 			content = email_template.get("message")
 
@@ -181,6 +191,5 @@ class EventTicket(Document):
 			subject=f"Your ticket to {event_title} is cancelled.",
 			message=f"Hi {self.attendee_name}, your ticket has been cancelled successfully. Sad to see you go.",
 			header=[("Ticket Cancelled"), "red"],
-			delayed=False,
 			retry=2,
 		)

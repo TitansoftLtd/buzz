@@ -5,23 +5,20 @@
 		</div>
 
 		<div v-else-if="registered" class="text-center">
-			<div class="bg-surface-green-1 border border-outline-green-1 rounded-lg p-8">
-				<LucideCheckCircle class="w-16 h-16 text-ink-green-2 mx-auto mb-4" />
-				<h2 class="text-ink-green-3 font-semibold text-xl mb-2">
+			<div class="bg-surface-green-1 border border-outline-green-1 rounded-6 p-8">
+				<LucideCheckCircle class="w-16 h-16 text-ink-green-6 mx-auto mb-4" />
+				<h2 class="text-ink-green-6 text-2xl-semibold mb-2">
 					{{ __("Thank you for your interest!") }}
 				</h2>
-				<p class="text-ink-green-2">
+				<p class="text-ink-green-6">
 					{{ __("We have registered your interest and will be in touch soon.") }}
 				</p>
 			</div>
 		</div>
 
-		<div
-			v-else-if="campaign"
-			class="bg-surface-white border border-outline-gray-1 rounded-lg p-6"
-		>
-			<h1 class="text-ink-gray-9 font-bold text-2xl mb-6">
-				{{ campaign.title }}
+		<div v-else-if="campaignDoc" class="bg-surface-base border border-outline-gray-1 rounded-6 p-6">
+			<h1 class="text-ink-gray-9 text-3xl-bold mb-6">
+				{{ campaignDoc.title }}
 			</h1>
 
 			<div
@@ -39,18 +36,18 @@
 				{{ __("Register") }}
 			</Button>
 
-			<p v-if="errorMessage" class="text-ink-red-2 text-sm mt-4 text-center">
+			<p v-if="errorMessage" class="text-ink-red-5 text-sm mt-4 text-center">
 				{{ errorMessage }}
 			</p>
 		</div>
 
 		<div v-else-if="error" class="text-center">
-			<div class="bg-surface-red-1 border border-outline-red-1 rounded-lg p-8">
-				<LucideXCircle class="w-16 h-16 text-ink-red-2 mx-auto mb-4" />
-				<h2 class="text-ink-red-3 font-semibold text-xl mb-2">
+			<div class="bg-surface-red-1 border border-outline-red-1 rounded-6 p-8">
+				<LucideXCircle class="w-16 h-16 text-ink-red-5 mx-auto mb-4" />
+				<h2 class="text-ink-red-6 text-2xl-semibold mb-2">
 					{{ __("Campaign Not Found") }}
 				</h2>
-				<p class="text-ink-red-2">
+				<p class="text-ink-red-5">
 					{{ error }}
 				</p>
 			</div>
@@ -58,58 +55,66 @@
 	</div>
 </template>
 
-<script setup>
-import { Button, Spinner, createResource } from "frappe-ui";
-import { marked } from "marked";
-import { computed, ref } from "vue";
-import LucideCheckCircle from "~icons/lucide/check-circle";
-import LucideXCircle from "~icons/lucide/x-circle";
+<script setup lang="ts">
+import { Button, Spinner, createResource } from "frappe-ui"
+import { marked } from "marked"
+import { computed, ref } from "vue"
+import LucideCheckCircle from "~icons/lucide/check-circle"
+import LucideXCircle from "~icons/lucide/x-circle"
+
+import type { FrappeError } from "@/types"
+
+interface Campaign {
+	title?: string
+	description?: string
+	[key: string]: any
+}
 
 const props = defineProps({
 	campaign: {
 		type: String,
 		required: true,
 	},
-});
+})
 
-const campaign = ref(null);
-const registered = ref(false);
-const error = ref(null);
-const errorMessage = ref(null);
+const campaignDoc = ref<Campaign | null>(null)
+const registered = ref(false)
+const error = ref<string | null>(null)
+const errorMessage = ref<string | null>(null)
 
 const renderedDescription = computed(() => {
-	if (!campaign.value?.description) return "";
-	return marked(campaign.value.description);
-});
+	if (!campaignDoc.value?.description) return ""
+	return marked(campaignDoc.value.description)
+})
 
 const campaignResource = createResource({
-	url: "buzz.api.get_campaign_details",
+	url: "buzz.api.campaigns.get_campaign_details",
 	params: {
 		campaign: props.campaign,
 	},
 	auto: true,
-	onSuccess: (data) => {
-		campaign.value = data;
+	onSuccess: (data: Campaign) => {
+		campaignDoc.value = data
 	},
-	onError: (err) => {
-		error.value = err.messages?.[0] || __("Campaign not found or not active");
+	onError: (err: FrappeError) => {
+		error.value = err.messages?.[0] || __("Campaign not found or not active")
 	},
-});
+})
 
 const registerResource = createResource({
-	url: "buzz.api.register_campaign_interest",
+	url: "buzz.api.campaigns.register_campaign_interest",
 	onSuccess: () => {
-		registered.value = true;
-		errorMessage.value = null;
+		registered.value = true
+		errorMessage.value = null
 	},
-	onError: (err) => {
-		errorMessage.value = err.messages?.[0] || __("Failed to register interest");
+	onError: (err: FrappeError) => {
+		errorMessage.value = err.messages?.[0] || __("Failed to register interest")
 	},
-});
+})
 
 function registerInterest() {
 	registerResource.submit({
 		campaign: props.campaign,
-	});
+	})
 }
 </script>

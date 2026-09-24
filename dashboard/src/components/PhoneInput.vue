@@ -2,18 +2,17 @@
 	<div class="space-y-1.5">
 		<label class="text-xs text-ink-gray-5 block">
 			{{ __(label) }}
-			<span v-if="required" class="text-ink-red-4">*</span>
+			<span v-if="required" class="text-ink-red-8">*</span>
 		</label>
 		<div class="flex gap-1.5">
-			<div class="w-24 shrink-0">
-				<Combobox
-					:model-value="null"
-					@update:model-value="onDialCodeChange"
-					:options="dialCodeOptions"
-					variant="outline"
-					:placeholder="shortDisplay"
-				/>
-			</div>
+			<Combobox
+				class="w-26"
+				:model-value="null"
+				@update:model-value="onDialCodeChange"
+				:options="dialCodeOptions"
+				variant="outline"
+				:placeholder="shortDisplay"
+			/>
 			<TextInput
 				type="tel"
 				:model-value="localNumber"
@@ -21,95 +20,98 @@
 				:placeholder="placeholder || __('Phone number')"
 			/>
 		</div>
+		<ErrorMessage v-if="error" :message="error" />
 	</div>
 </template>
 
-<script setup>
-import { Combobox, TextInput, createResource } from "frappe-ui";
-import { computed, ref, watch } from "vue";
+<script setup lang="ts">
+import { Combobox, ErrorMessage, TextInput, createResource } from "frappe-ui"
+import { computed, ref, watch } from "vue"
+
+import { DEFAULT_DIAL_CODE, formatPhone, parsePhone } from "@/utils/phone"
+
+interface DialCode {
+	code: string
+	dial_code: string
+}
 
 const props = defineProps({
 	modelValue: { type: String, default: "" },
 	label: { type: String, default: "Phone" },
 	placeholder: { type: String, default: "" },
 	required: { type: Boolean, default: false },
-});
+	error: { type: String, default: "" },
+})
 
-const emit = defineEmits(["update:modelValue"]);
+const emit = defineEmits(["update:modelValue"])
 
-const dialCode = ref("+91");
-const localNumber = ref("");
-const dialCodesData = ref([]);
+const dialCode = ref(DEFAULT_DIAL_CODE)
+const localNumber = ref("")
+const dialCodesData = ref<DialCode[]>([])
 
-function getFlagEmoji(countryCode) {
-	if (!countryCode) return "";
+function getFlagEmoji(countryCode: string) {
+	if (!countryCode) return ""
 	const codePoints = countryCode
 		.toUpperCase()
 		.split("")
-		.map((char) => 127397 + char.charCodeAt());
-	return String.fromCodePoint(...codePoints);
+		.map((char) => 127397 + char.charCodeAt(0))
+	return String.fromCodePoint(...codePoints)
 }
 
 const shortDisplay = computed(() => {
-	const entry = dialCodesData.value.find((d) => d.dial_code === dialCode.value);
-	if (entry) return `${getFlagEmoji(entry.code)} ${entry.dial_code}`;
-	return dialCode.value;
-});
+	const entry = dialCodesData.value.find((d) => d.dial_code === dialCode.value)
+	if (entry) return `${getFlagEmoji(entry.code)} ${entry.dial_code}`
+	return dialCode.value
+})
 
 const dialCodeOptions = computed(() =>
 	dialCodesData.value.map((d) => ({
 		label: `${getFlagEmoji(d.code)} ${d.dial_code}`,
 		value: d.dial_code,
-	}))
-);
+	})),
+)
 
-function parsePhone(value) {
-	if (!value) {
-		localNumber.value = "";
-		return;
-	}
-	const match = value.match(/^(\+\d{1,4})[\s-]?(.*)$/);
-	if (match) {
-		dialCode.value = match[1];
-		localNumber.value = match[2];
-	} else {
-		localNumber.value = value;
-	}
+const knownDialCodes = computed(() => dialCodesData.value.map((entry) => entry.dial_code))
+
+function syncFromModel(value: string) {
+	const { dialCode: parsedCode, localNumber: parsedNumber } = parsePhone(
+		value,
+		knownDialCodes.value,
+	)
+	if (parsedCode) dialCode.value = parsedCode
+	localNumber.value = parsedNumber
 }
 
-parsePhone(props.modelValue);
+syncFromModel(props.modelValue)
 
 watch(
 	() => props.modelValue,
-	(val) => parsePhone(val)
-);
+	(val) => syncFromModel(val),
+)
 
 function emitValue() {
-	if (!localNumber.value) {
-		emit("update:modelValue", "");
-		return;
-	}
-	emit("update:modelValue", `${dialCode.value} ${localNumber.value}`);
+	emit("update:modelValue", formatPhone(dialCode.value, localNumber.value))
 }
 
-function onDialCodeChange(code) {
+function onDialCodeChange(code: unknown) {
 	if (code) {
-		dialCode.value = code;
-		emitValue();
+		dialCode.value = String(code)
+		emitValue()
 	}
 }
 
-function onNumberInput(num) {
-	const digitsOnly = String(num).replace(/\D/g, "");
-	localNumber.value = digitsOnly;
-	emitValue();
+function onNumberInput(num: string) {
+	const digitsOnly = String(num).replace(/\D/g, "")
+	localNumber.value = digitsOnly
+	emitValue()
 }
 
 createResource({
 	url: "buzz.api.forms.get_dial_codes",
 	auto: true,
-	onSuccess: (data) => {
-		dialCodesData.value = data;
+	onSuccess: (data: DialCode[]) => {
+		dialCodesData.value = data
+		syncFromModel(props.modelValue)
 	},
-});
+})
 </script>

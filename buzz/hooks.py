@@ -12,13 +12,39 @@ required_apps = ["frappe/payments"]
 
 export_python_type_annotations = True
 
+# Require all whitelisted methods to have type annotations
+require_type_annotated_api_methods = True
+
 after_install = "buzz.install.after_install"
 
 before_uninstall = "buzz.uninstall.before_uninstall"
 
 
 website_route_rules = [
-	{"from_route": "/dashboard/<path:app_path>", "to_route": "dashboard"},
+	{"from_route": "/b", "to_route": "dashboard"},
+	{"from_route": "/b/<path:app_path>", "to_route": "dashboard"},
+]
+
+# Keep old /dashboard/* links working: redirect to the shortened /b/* scheme.
+# Ordered specific -> catch-all; the first matching source wins.
+# forward_query_parameters is required on every rule: without it the query
+# string is dropped, which would strip the access token off guest booking
+# confirmation links.
+website_redirects = [
+	{
+		"source": r"/dashboard/events/([^/]+)/forms/([^/]+)",
+		"target": r"/b/\1/\2",
+		"forward_query_parameters": True,
+	},
+	{
+		"source": r"/dashboard/book-tickets/(.+)",
+		"target": r"/b/register/\1",
+		"forward_query_parameters": True,
+	},
+	{"source": r"/dashboard/(.*)", "target": r"/b/\1", "forward_query_parameters": True},
+	# Bare /dashboard has no trailing slash for the catch-all above to match, and
+	# www/dashboard.html would otherwise serve the SPA shell under the wrong base.
+	{"source": r"/dashboard", "target": "/b", "forward_query_parameters": True},
 ]
 
 # Scheduled Tasks
@@ -35,6 +61,12 @@ scheduler_events = {
 # -------
 
 before_tests = "buzz.install.before_tests"
+
+# Payments
+# --------
+
+# Fired by the payments app when a gateway settles a refund.
+handle_refund_notification = "buzz.payments.handle_refund_notification"
 
 
 doc_events = {
@@ -60,7 +92,7 @@ add_to_apps_screen = [
 		"logo": "/assets/buzz/images/buzz-logo-rounded.png",
 		"title": "Buzz",
 		"route": "/app/buzz",
-		"has_permission": "buzz.api.has_app_permission",
+		"has_permission": "buzz.api.account.has_app_permission",
 	}
 ]
 
@@ -170,6 +202,20 @@ after_migrate = "buzz.install.on_migrate"
 # has_permission = {
 # 	"Event": "frappe.desk.doctype.event.event.has_permission",
 # }
+
+# Bookings and tickets are scoped to the person they name — the attendee, or the buyer —
+# rather than to whoever created the row, which is often neither of them.
+permission_query_conditions = {
+	"Event Booking": "buzz.permissions.owned_query_conditions",
+	"Event Ticket": "buzz.permissions.owned_query_conditions",
+	"Talk Proposal": "buzz.proposals.doctype.talk_proposal.talk_proposal.get_permission_query_conditions",
+}
+
+has_permission = {
+	"Event Booking": "buzz.permissions.owned_has_permission",
+	"Event Ticket": "buzz.permissions.owned_has_permission",
+	"Talk Proposal": "buzz.proposals.doctype.talk_proposal.talk_proposal.has_talk_proposal_permission",
+}
 
 # Document Events
 # ---------------

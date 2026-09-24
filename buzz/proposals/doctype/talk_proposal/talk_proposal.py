@@ -5,6 +5,44 @@ import frappe
 from frappe.model.document import Document
 from frappe.model.mapper import get_mapped_doc
 
+PROPOSAL_MANAGER_ROLES = frozenset({"System Manager", "Event Manager"})
+
+
+def is_proposal_manager(user: str) -> bool:
+	return user == "Administrator" or bool(PROPOSAL_MANAGER_ROLES & set(frappe.get_roles(user)))
+
+
+def get_permission_query_conditions(user: str | None = None) -> str:
+	user = user or frappe.session.user
+	if is_proposal_manager(user):
+		return ""
+
+	escaped_user = frappe.db.escape(user)
+	# Guest form submissions leave owner/submitted_by as "Guest", so speakers
+	# are matched by their email in the speakers child table.
+	return (
+		f"(`tabTalk Proposal`.`submitted_by` = {escaped_user}"
+		f" or `tabTalk Proposal`.`owner` = {escaped_user}"
+		f" or `tabTalk Proposal`.`name` in ("
+		f"select `parent` from `tabProposal Speaker`"
+		f" where `parenttype` = 'Talk Proposal' and `email` = {escaped_user}))"
+	)
+
+
+def has_talk_proposal_permission(doc, ptype: str | None = None, user: str | None = None) -> bool:
+	# Controller hooks can only deny access: True means "no objection" and
+	# role permissions still apply, False blocks the document outright.
+	user = user or frappe.session.user
+	if ptype == "create" or doc.is_new():
+		return True
+	if is_proposal_manager(user):
+		return True
+	if user in (doc.submitted_by, doc.owner):
+		return True
+	# User emails are stored lowercase, but guest-entered speaker emails keep
+	# their original casing.
+	return any(speaker.email and speaker.email.lower() == user.lower() for speaker in doc.speakers)
+
 
 class TalkProposal(Document):
 	# begin: auto-generated types
@@ -23,7 +61,7 @@ class TalkProposal(Document):
 		event: DF.Link
 		phone: DF.Phone | None
 		speakers: DF.Table[ProposalSpeaker]
-		status: DF.Literal["Review Pending", "Shortlisted", "Accepted", "Rejected"]
+		status: DF.Link
 		submitted_by: DF.Link | None
 		title: DF.Data
 	# end: auto-generated types
@@ -46,6 +84,7 @@ class TalkProposal(Document):
 							"first_name": speaker.first_name,
 							"last_name": speaker.last_name,
 							"email": speaker.email,
+							"user_type": "Website User",
 						}
 					)
 					.insert()
@@ -57,4 +96,8 @@ class TalkProposal(Document):
 				speaker_profile = frappe.get_doc({"doctype": "Speaker Profile", "user": user}).insert().name
 
 			talk.append("speakers", {"speaker": speaker_profile})
-		return talk.save()
+
+		talk.save()
+		self.status = "Accepted"
+		self.save()
+		return talk

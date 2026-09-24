@@ -8,25 +8,18 @@
 		leave-from-class="opacity-100 transform translate-y-0 scale-100"
 		leave-to-class="opacity-0 transform -translate-y-4 scale-95"
 	>
-		<div
-			v-if="show"
-			class="mb-6 bg-surface-green-1 border border-outline-green-1 rounded-lg p-4"
-		>
+		<div v-if="show" class="mb-6 bg-surface-green-1 border border-outline-green-1 rounded-6 p-4">
 			<div class="flex items-center">
-				<LucideCheckCircle class="w-6 h-6 text-ink-green-2 mr-3" />
+				<LucideCheckCircle class="w-6 h-6 text-ink-green-6 mr-3" />
 				<div>
-					<h3 class="text-ink-green-3 font-semibold">
+					<h3 class="text-ink-green-7 font-semibold">
 						{{ __("Payment Successful! 🎉") }}
 					</h3>
-					<p class="text-ink-green-2">
+					<p class="text-ink-green-6">
 						{{
-							isWebinar
-								? __(
-										"Your registration has been confirmed. You will receive an invite shortly."
-								  )
-								: __(
-										"Your booking has been confirmed. Check your email for tickets and details."
-								  )
+							isRegistration
+								? __("Your registration has been confirmed. You will receive an invite shortly.")
+								: __("Your booking has been confirmed. Check your email for tickets and details.")
 						}}
 					</p>
 				</div>
@@ -35,17 +28,17 @@
 	</Transition>
 </template>
 
-<script setup>
-import LucideCheckCircle from "~icons/lucide/check-circle";
+<script setup lang="ts">
+import LucideCheckCircle from "~icons/lucide/check-circle"
 
-const props = defineProps({
-	show: {
-		type: Boolean,
-		default: false,
+withDefaults(
+	defineProps<{
+		show?: boolean
+		isRegistration?: boolean
+	}>(),
+	{
+		show: false,
+		isRegistration: false,
 	},
-	isWebinar: {
-		type: Boolean,
-		default: false,
-	},
-});
+)
 </script>

@@ -6,7 +6,7 @@ from unittest.mock import patch
 import frappe
 from frappe.tests import IntegrationTestCase
 
-from buzz.utils import generate_qr_code_file, make_qr_image
+from buzz.utils import generate_qr_code_file, make_qr_image, render_email_template
 
 EXTRA_TEST_RECORD_DEPENDENCIES = []
 IGNORE_TEST_RECORD_DEPENDENCIES = ["Bulk Ticket Coupon"]
@@ -174,3 +174,217 @@ class TestQRCodeGeneration(IntegrationTestCase):
 
 		# Cleanup
 		file_doc.delete()
+
+
+class TestEventTicketZoomMeeting(IntegrationTestCase):
+	def setUp(self):
+		# tearDown rolls back, so the fixtures are rebuilt per test rather than per class.
+		super().setUp()
+		self.event = frappe.get_doc("Buzz Event", {"route": "test-route"})
+		self.ticket_type = frappe.get_doc(
+			{
+				"doctype": "Event Ticket Type",
+				"title": "Meeting TT",
+				"event": self.event.name,
+				"currency": "USD",
+			}
+		).insert(ignore_permissions=True, ignore_if_duplicate=True)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _submit_ticket(self, email="alice@example.com"):
+		ticket = frappe.get_doc(
+			{
+				"doctype": "Event Ticket",
+				"event": self.event.name,
+				"ticket_type": self.ticket_type.name,
+				"first_name": "Alice",
+				"last_name": "Smith",
+				"attendee_email": email,
+			}
+		).insert(ignore_permissions=True)
+		ticket.submit()
+		return ticket
+
+	def test_ticket_registration_points_at_the_events_zoom_meeting(self):
+		from zoom_integration.tests.zoom_fixtures import (
+			add_meeting_registrant_response,
+			create_meeting_response,
+		)
+
+		meeting_controller = "zoom_integration.zoom_integration.doctype.zoom_meeting.zoom_meeting"
+
+		with patch(f"{meeting_controller}.create_zoom_session", return_value=create_meeting_response()):
+			meeting = frappe.get_doc(
+				{
+					"doctype": "Zoom Meeting",
+					"title": "Ticket Meeting",
+					"date": "2026-08-01",
+					"start_time": "10:00:00",
+					"duration": 3600,
+					"timezone": "Asia/Calcutta",
+				}
+			).insert(ignore_permissions=True)
+
+		self.event.db_set("zoom_meeting", meeting.name)
+		registrant = add_meeting_registrant_response()
+
+		with patch(f"{meeting_controller}.add_zoom_registrant", return_value=registrant):
+			ticket = self._submit_ticket()
+
+		self.assertTrue(ticket.zoom_session_registration)
+		registration = frappe.get_doc("Zoom Session Registration", ticket.zoom_session_registration)
+		self.assertEqual(registration.reference_doctype, "Zoom Meeting")
+		self.assertEqual(registration.reference_name, meeting.name)
+		self.assertEqual(registration.registrant_id, registrant["registrant_id"])
+
+	def test_ticket_registration_points_at_the_events_zoom_webinar(self):
+		from zoom_integration.tests.zoom_fixtures import (
+			add_webinar_registrant_response,
+			create_webinar_response,
+			mock_zoom_post,
+		)
+
+		webinar_controller = "zoom_integration.zoom_integration.doctype.zoom_webinar.zoom_webinar"
+
+		with mock_zoom_post(webinar_controller, 201, create_webinar_response()):
+			webinar = frappe.get_doc(
+				{
+					"doctype": "Zoom Webinar",
+					"title": "Ticket Webinar",
+					"date": "2026-08-01",
+					"start_time": "10:00:00",
+					"duration": 3600,
+					"timezone": "Asia/Calcutta",
+				}
+			).insert(ignore_permissions=True)
+
+		self.event.db_set("zoom_webinar", webinar.name)
+		registrant = add_webinar_registrant_response()
+
+		with mock_zoom_post(webinar_controller, 200, registrant):
+			ticket = self._submit_ticket("carol@example.com")
+
+		registration = frappe.get_doc("Zoom Session Registration", ticket.zoom_session_registration)
+		self.assertEqual(registration.reference_doctype, "Zoom Webinar")
+		self.assertEqual(registration.reference_name, webinar.name)
+		self.assertEqual(registration.registrant_id, registrant["registrant_id"])
+
+	def test_ticket_details_expose_the_zoom_session_reference(self):
+		from zoom_integration.tests.zoom_fixtures import (
+			add_meeting_registrant_response,
+			create_meeting_response,
+		)
+
+		from buzz.api.tickets import get_ticket_details
+
+		meeting_controller = "zoom_integration.zoom_integration.doctype.zoom_meeting.zoom_meeting"
+
+		with patch(f"{meeting_controller}.create_zoom_session", return_value=create_meeting_response()):
+			meeting = frappe.get_doc(
+				{
+					"doctype": "Zoom Meeting",
+					"title": "Details Meeting",
+					"date": "2026-08-01",
+					"start_time": "10:00:00",
+					"duration": 3600,
+					"timezone": "Asia/Calcutta",
+				}
+			).insert(ignore_permissions=True)
+
+		self.event.db_set("zoom_meeting", meeting.name)
+		registrant = add_meeting_registrant_response()
+
+		with patch(f"{meeting_controller}.add_zoom_registrant", return_value=registrant):
+			ticket = self._submit_ticket("dana@example.com")
+
+		details = get_ticket_details(ticket.name)
+
+		self.assertEqual(details.zoom_join_url, registrant["join_url"])
+		self.assertEqual(details.zoom_reference_doctype, "Zoom Meeting")
+		self.assertEqual(details.zoom_reference_name, meeting.name)
+
+
+class TestRenderEmailTemplate(IntegrationTestCase):
+	"""Attendees and sponsors are Website Users; only Desk Users can read an Email Template."""
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def test_renders_for_a_user_without_email_template_permission(self):
+		template = frappe.get_doc(
+			{
+				"doctype": "Email Template",
+				"name": "Unprivileged Render Template",
+				"subject": "NOPERM - {{ event_title }}",
+				"response": "<p>NOPERM content</p>",
+			}
+		).insert(ignore_permissions=True)
+
+		attendee = "attendee-render@example.com"
+		if not frappe.db.exists("User", attendee):
+			frappe.get_doc(
+				{
+					"doctype": "User",
+					"email": attendee,
+					"first_name": "Attendee",
+					"user_type": "Website User",
+					"send_welcome_email": 0,
+				}
+			).insert(ignore_permissions=True)
+		self.addCleanup(frappe.set_user, frappe.session.user)
+		frappe.set_user(attendee)
+		self.assertFalse(frappe.has_permission("Email Template", "read"))
+
+		rendered = render_email_template(template.name, {"event_title": "Buzz Conf"})
+
+		self.assertEqual(rendered["subject"], "NOPERM - Buzz Conf")
+		self.assertIn("NOPERM content", rendered["message"])
+
+
+class TestGuestTicketEmail(IntegrationTestCase):
+	"""Public bookings submit their tickets as Guest."""
+
+	def setUp(self):
+		self.event = frappe.get_doc("Buzz Event", {"route": "test-route"})
+		self.ticket_type = frappe.get_doc(
+			{
+				"doctype": "Event Ticket Type",
+				"event": self.event.name,
+				"title": "Guest Email Ticket",
+				"price": 0,
+			}
+		).insert(ignore_permissions=True)
+		self.template = frappe.get_doc(
+			{
+				"doctype": "Email Template",
+				"name": "Guest Ticket Template",
+				"subject": "GUEST - {{ event_title }}",
+				"response": "<p>Guest content</p>",
+			}
+		).insert(ignore_permissions=True)
+		self.event.db_set("ticket_email_template", self.template.name)
+		self.addCleanup(frappe.set_user, frappe.session.user)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	@patch("frappe.sendmail")
+	def test_guest_can_render_the_ticket_email_template(self, mock_sendmail):
+		ticket = frappe.get_doc(
+			{
+				"doctype": "Event Ticket",
+				"event": self.event.name,
+				"ticket_type": self.ticket_type.name,
+				"first_name": "Guest",
+				"attendee_email": "guest-booking@example.com",
+			}
+		).insert(ignore_permissions=True)
+
+		frappe.set_user("Guest")
+
+		ticket.send_ticket_email(now=True)
+
+		mock_sendmail.assert_called_once()
+		self.assertIn("GUEST", mock_sendmail.call_args[1]["subject"])

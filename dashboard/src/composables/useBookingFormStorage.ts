@@ -1,5 +1,7 @@
 import { useStorage } from "@vueuse/core"
 
+import type { BookingAttendee } from "@/types"
+
 /**
  * Composable for managing booking form localStorage data
  * This allows components to access and clear booking form data stored in localStorage
@@ -12,11 +14,11 @@ export function useBookingFormStorage(eventRoute: string) {
 
 	// Scope storage keys to the specific event route
 	const storageKeyPrefix = `event-booking-${eventRoute}`
-	const attendees = useStorage(`${storageKeyPrefix}-attendees`, [], undefined, {
+	const attendees = useStorage<BookingAttendee[]>(`${storageKeyPrefix}-attendees`, [], undefined, {
 		deep: true,
 	})
 	const attendeeIdCounter = useStorage(`${storageKeyPrefix}-counter`, 0)
-	const bookingCustomFields = useStorage(
+	const bookingCustomFields = useStorage<Record<string, any>>(
 		`${storageKeyPrefix}-custom-fields`,
 		{},
 	)
@@ -51,10 +53,7 @@ export function useBookingFormStorage(eventRoute: string) {
 	 * Check if there's any stored booking data
 	 */
 	const hasStoredData = () => {
-		return (
-			attendees.value.length > 0 ||
-			Object.keys(bookingCustomFields.value).length > 0
-		)
+		return attendees.value.length > 0 || Object.keys(bookingCustomFields.value).length > 0
 	}
 
 	return {

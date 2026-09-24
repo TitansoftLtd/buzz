@@ -7,9 +7,11 @@ from unittest.mock import patch
 import frappe
 from frappe.tests.utils import FrappeTestCase
 
-from buzz.api import are_registrations_closed
-from buzz.events.doctype.buzz_event.buzz_event import create_from_template
+from buzz.api.booking.services import are_registrations_closed
+from buzz.events.doctype.buzz_event.buzz_event import RESERVED_EVENT_ROUTES, create_from_template
 from buzz.events.doctype.event_template.event_template import create_template_from_event
+from buzz.patches.set_time_zone_label_for_existing_events import execute as backfill_time_zone_labels
+from buzz.utils import get_time_zone_label
 
 
 class TestBuzzEvent(FrappeTestCase):
@@ -87,6 +89,59 @@ class TestBuzzEvent(FrappeTestCase):
 		)
 		# Should not raise
 		event.validate_schedule()
+
+	# ==================== Reserved Route Tests ====================
+
+	def _make_event_with_route(self, route):
+		return frappe.get_doc(
+			{
+				"doctype": "Buzz Event",
+				"title": f"Route Test Event {route}",
+				"category": "Test Category",
+				"host": "Test Host",
+				"start_date": frappe.utils.today(),
+				"start_time": "09:00:00",
+				"end_time": "18:00:00",
+				"route": route,
+			}
+		)
+
+	def test_reserved_routes_are_rejected(self):
+		"""Every reserved segment must be refused as an event route.
+
+		An event route becomes /b/<route>, so any route matching a top-level
+		dashboard segment would be shadowed by that segment's own page.
+		"""
+		for route in RESERVED_EVENT_ROUTES:
+			with self.subTest(route=route):
+				with self.assertRaises(frappe.exceptions.ValidationError):
+					self._make_event_with_route(route).insert()
+				frappe.db.rollback()
+
+	def test_reserved_routes_are_rejected_case_insensitively(self):
+		"""Mixed-case spellings of a reserved segment must be refused too.
+
+		vue-router matches paths case-insensitively, so an event routed
+		"Account" is shadowed by /b/account exactly as "account" would be.
+		"""
+		for route in ("Account", "BOOKING-SUCCESS", "Register"):
+			with self.subTest(route=route):
+				with self.assertRaises(frappe.exceptions.ValidationError):
+					self._make_event_with_route(route).insert()
+				frappe.db.rollback()
+
+	def test_reserved_routes_cover_dashboard_segments(self):
+		"""booking-success is reserved: it is a static route declared ahead of the
+		/:eventRoute/:formRoute catch-all, so an event using it would have every
+		custom form swallowed by the booking confirmation page.
+		"""
+		self.assertIn("booking-success", RESERVED_EVENT_ROUTES)
+
+	def test_unreserved_route_is_accepted(self):
+		"""A route that shadows nothing saves normally."""
+		event = self._make_event_with_route("my-conference-2026")
+		event.insert()
+		self.assertEqual(event.route, "my-conference-2026")
 
 	# ==================== Create from Template Tests ====================
 
@@ -630,17 +685,69 @@ class TestBuzzEvent(FrappeTestCase):
 class TestRegistrationsClosed(FrappeTestCase):
 	"""Tests for the are_registrations_closed function with timezone handling."""
 
-	def _make_event(self, registrations_close_at=None, time_zone=None):
-		"""Create a minimal event _dict for testing (no DB insert needed)."""
+	def _make_event(
+		self,
+		registrations_close_at=None,
+		time_zone=None,
+		start_date="2026-06-01",
+		start_time="09:00:00",
+		end_date="2026-06-01",
+		end_time="18:00:00",
+	):
+		"""Create a minimal event _dict for testing (no DB insert needed).
+
+		Defaults start/end to a fixed date far from any fake "now" used in the
+		explicit-close_at tests, so the event-end fallback never accidentally
+		kicks in for those.
+		"""
 		return frappe._dict(
 			registrations_close_at=registrations_close_at,
 			time_zone=time_zone,
+			start_date=start_date,
+			start_time=start_time,
+			end_date=end_date,
+			end_time=end_time,
 		)
 
-	def test_no_close_at_returns_false(self):
-		"""When registrations_close_at is not set, registrations are open."""
-		event = self._make_event()
-		self.assertFalse(are_registrations_closed(event))
+	def test_no_close_at_and_event_in_future_returns_false(self):
+		"""When registrations_close_at is not set and the event hasn't ended, registrations are open."""
+		fake_now = datetime(2026, 6, 15, 10, 0, 0)
+		event = self._make_event(
+			time_zone="UTC",
+			start_date="2026-06-20",
+			start_time="09:00:00",
+			end_date="2026-06-20",
+			end_time="18:00:00",
+		)
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
+			self.assertFalse(are_registrations_closed(event))
+
+	def test_no_close_at_falls_back_to_event_end(self):
+		"""When registrations_close_at is not set, registrations close once the event itself has ended (issue #91)."""
+		fake_now = datetime(2026, 6, 15, 20, 0, 0)
+		event = self._make_event(
+			time_zone="UTC",
+			start_date="2026-06-15",
+			start_time="09:00:00",
+			end_date="2026-06-15",
+			end_time="18:00:00",  # event ended 2 hours before fake_now
+		)
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
+			self.assertTrue(are_registrations_closed(event))
+
+	def test_close_at_takes_priority_over_event_end(self):
+		"""An explicit registrations_close_at overrides the event-end fallback, even when it's later than the event end."""
+		fake_now = datetime(2026, 6, 15, 19, 0, 0)  # after event end (18:00), before close_at (20:00)
+		event = self._make_event(
+			registrations_close_at="2026-06-15 20:00:00",
+			time_zone="UTC",
+			start_date="2026-06-15",
+			start_time="09:00:00",
+			end_date="2026-06-15",
+			end_time="18:00:00",
+		)
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
+			self.assertFalse(are_registrations_closed(event))
 
 	def test_future_close_at_returns_false(self):
 		"""When close_at is in the future, registrations are open."""
@@ -649,7 +756,7 @@ class TestRegistrationsClosed(FrappeTestCase):
 			registrations_close_at="2026-06-15 12:00:00",  # 2 hours after fake_now
 			time_zone="UTC",
 		)
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
 			self.assertFalse(are_registrations_closed(event))
 
 	def test_past_close_at_returns_true(self):
@@ -659,7 +766,7 @@ class TestRegistrationsClosed(FrappeTestCase):
 			registrations_close_at="2026-06-15 12:00:00",  # 2 hours before fake_now
 			time_zone="UTC",
 		)
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
 			self.assertTrue(are_registrations_closed(event))
 
 	def test_timezone_ahead_of_utc_closes_earlier(self):
@@ -676,7 +783,7 @@ class TestRegistrationsClosed(FrappeTestCase):
 			time_zone="Asia/Kolkata",
 		)
 
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_ist_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_ist_now):
 			# 19:30 IST > 18:00 IST → closed
 			self.assertTrue(are_registrations_closed(event))
 
@@ -694,7 +801,7 @@ class TestRegistrationsClosed(FrappeTestCase):
 			time_zone="US/Pacific",
 		)
 
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_pdt_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_pdt_now):
 			# 16:00 PDT < 18:00 PDT → still open
 			self.assertFalse(are_registrations_closed(event))
 
@@ -712,12 +819,12 @@ class TestRegistrationsClosed(FrappeTestCase):
 
 		# 17:30 UTC = 23:00 IST
 		fake_ist_now = datetime(2026, 6, 15, 23, 0, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_ist_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_ist_now):
 			self.assertTrue(are_registrations_closed(event_ist))
 
 		# 17:30 UTC = 10:30 PDT
 		fake_pdt_now = datetime(2026, 6, 15, 10, 30, 0, tzinfo=timezone(timedelta(hours=-7)))
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_pdt_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_pdt_now):
 			self.assertFalse(are_registrations_closed(event_pdt))
 
 	def test_falls_back_to_system_timezone_when_event_tz_not_set(self):
@@ -727,5 +834,270 @@ class TestRegistrationsClosed(FrappeTestCase):
 			registrations_close_at="2026-06-15 13:00:00",  # 1 hour before fake_now
 			time_zone=None,
 		)
-		with patch("buzz.api.get_datetime_in_timezone", return_value=fake_now):
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=fake_now):
 			self.assertTrue(are_registrations_closed(event))
+
+	def test_closing_moment_is_same_absolute_instant_for_viewers_anywhere(self):
+		"""are_registrations_closed never looks at the viewer's timezone, only the event's -
+		so a person checking from London and a person checking from Mumbai at the exact same
+		real-world moment always get the same open/closed answer.
+
+		Worked example: event in Asia/Kolkata (IST, UTC+5:30) closes at 16:30 IST.
+		London in June is on BST (UTC+1:00). Offset difference: 4:30.
+		So the closing instant is simultaneously:
+		  2026-06-15 11:00:00 UTC
+		  2026-06-15 12:00:00 BST  (noon in London)
+		  2026-06-15 16:30:00 IST  (4:30 PM in India - the configured close time)
+		`get_datetime_in_timezone` (mocked here, as elsewhere in this class) always returns
+		"now" already converted into the *event's* timezone - so regardless of where the
+		actual request came from, this test only needs to supply the IST-side value that
+		corresponds to that one shared real-world instant.
+		"""
+		event = self._make_event(registrations_close_at="2026-06-15 16:30:00", time_zone="Asia/Kolkata")
+
+		# Exactly at the closing instant (11:00 UTC / noon BST / 16:30 IST) -> comparison is
+		# strictly-greater-than, so registrations are still open at the exact boundary.
+		at_close = datetime(2026, 6, 15, 16, 30, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=at_close):
+			self.assertFalse(are_registrations_closed(event))
+
+		# One minute before that shared instant (10:59 UTC / 11:59 BST / 16:29 IST) -> still open.
+		before_close = datetime(2026, 6, 15, 16, 29, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=before_close):
+			self.assertFalse(are_registrations_closed(event))
+
+		# One minute after (11:01 UTC / 12:01 BST / 16:31 IST) -> closed.
+		after_close = datetime(2026, 6, 15, 16, 31, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=after_close):
+			self.assertTrue(are_registrations_closed(event))
+
+	def test_event_end_fallback_is_also_timezone_consistent(self):
+		"""Same India/London worked example as above, but for the no-explicit-cutoff fallback
+		path: the event's own end_date/end_time (16:30 IST) is what closes registrations.
+		"""
+		event = self._make_event(
+			time_zone="Asia/Kolkata",
+			start_date="2026-06-15",
+			start_time="09:00:00",
+			end_date="2026-06-15",
+			end_time="16:30:00",
+		)
+
+		# 16:29 IST (11:59 BST / noon-minus-1 in London) -> event still ongoing, open.
+		before_end = datetime(2026, 6, 15, 16, 29, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=before_end):
+			self.assertFalse(are_registrations_closed(event))
+
+		# 16:31 IST (12:01 BST, just past noon in London) -> event over, closed.
+		after_end = datetime(2026, 6, 15, 16, 31, 0, tzinfo=timezone(timedelta(hours=5, minutes=30)))
+		with patch("buzz.api.booking.services.get_datetime_in_timezone", return_value=after_end):
+			self.assertTrue(are_registrations_closed(event))
+
+
+class TestTimeZoneLabel(FrappeTestCase):
+	"""Tests for get_time_zone_label: IANA name -> short display label."""
+
+	def test_tzdb_abbreviation_when_alphabetic(self):
+		"""Zones where tzdata ships a real abbreviation use it directly."""
+		reference = datetime(2026, 6, 15, 12, 0)
+		self.assertEqual(get_time_zone_label("Asia/Kolkata", reference), "IST")
+		self.assertEqual(get_time_zone_label("Asia/Tokyo", reference), "JST")
+		self.assertEqual(get_time_zone_label("Africa/Nairobi", reference), "EAT")
+		self.assertEqual(get_time_zone_label("UTC", reference), "UTC")
+
+	def test_dst_variant_follows_reference_date(self):
+		"""DST zones get the abbreviation in effect on the reference date."""
+		winter = datetime(2026, 1, 15, 12, 0)
+		summer = datetime(2026, 7, 15, 12, 0)
+		self.assertEqual(get_time_zone_label("America/New_York", winter), "EST")
+		self.assertEqual(get_time_zone_label("America/New_York", summer), "EDT")
+		self.assertEqual(get_time_zone_label("Europe/Berlin", winter), "CET")
+		self.assertEqual(get_time_zone_label("Europe/Berlin", summer), "CEST")
+
+	def test_curated_abbreviation_when_tzdb_is_numeric(self):
+		"""Zones where tzdata returns a bare offset fall back to the curated map."""
+		reference = datetime(2026, 6, 15, 12, 0)
+		self.assertEqual(get_time_zone_label("Asia/Dubai", reference), "GST")
+		self.assertEqual(get_time_zone_label("Asia/Riyadh", reference), "AST")
+		self.assertEqual(get_time_zone_label("Asia/Bangkok", reference), "ICT")
+		self.assertEqual(get_time_zone_label("Asia/Kathmandu", reference), "NPT")
+
+	def test_gmt_offset_fallback_for_unmapped_zone(self):
+		"""Zones outside tzdata abbreviations and the curated map show a GMT offset."""
+		reference = datetime(2026, 6, 15, 12, 0)
+		# Bhutan: tzname is "+06", not in the curated map
+		self.assertEqual(get_time_zone_label("Asia/Thimphu", reference), "GMT+6")
+		# Myanmar: half-hour offset formatting
+		self.assertEqual(get_time_zone_label("Asia/Yangon", reference), "GMT+6:30")
+		# Marquesas: negative half-hour offset
+		self.assertEqual(get_time_zone_label("Pacific/Marquesas", reference), "GMT-9:30")
+
+	def test_empty_or_invalid_time_zone_returns_empty(self):
+		reference = datetime(2026, 6, 15, 12, 0)
+		self.assertEqual(get_time_zone_label(None, reference), "")
+		self.assertEqual(get_time_zone_label("", reference), "")
+		self.assertEqual(get_time_zone_label("Not/A_Zone", reference), "")
+
+	def test_current_iana_names_for_renamed_zones(self):
+		"""Renamed zones resolve under both the legacy and current IANA names."""
+		reference = datetime(2026, 6, 15, 12, 0)
+		self.assertEqual(get_time_zone_label("Asia/Ho_Chi_Minh", reference), "ICT")
+		self.assertEqual(get_time_zone_label("America/Nuuk", reference), "WGT")
+
+	def test_aware_reference_datetime_converted_not_reinterpreted(self):
+		"""US DST ends 2026-11-01 06:00 UTC; 05:30 UTC is still 01:30 EDT.
+
+		Naive .replace() would read 05:30 as New York wall clock (past the
+		switch, EST); a correct conversion lands on EDT.
+		"""
+		aware_reference = datetime(2026, 11, 1, 5, 30, tzinfo=timezone.utc)
+		self.assertEqual(get_time_zone_label("America/New_York", aware_reference), "EDT")
+
+
+class TestEventTimeZoneLabelField(FrappeTestCase):
+	"""Saving a Buzz Event stores the display label for its time zone."""
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _make_event(self, **overrides):
+		event_defaults = {
+			"doctype": "Buzz Event",
+			"title": "TZ Label Test Event",
+			"category": "Test Category",
+			"host": "Test Host",
+			"start_date": "2026-03-05",
+			"end_date": "2026-03-06",
+			"start_time": "9:00:00",
+			"end_time": "18:00:00",
+		}
+		event_defaults.update(overrides)
+		return frappe.get_doc(event_defaults)
+
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		TestBuzzEvent.create_test_fixtures()
+
+	def test_label_set_on_insert(self):
+		event = self._make_event(time_zone="Asia/Kolkata")
+		event.insert()
+		self.assertEqual(event.time_zone_label, "IST")
+
+	def test_label_updates_when_time_zone_changes(self):
+		event = self._make_event(time_zone="Asia/Kolkata")
+		event.insert()
+		event.time_zone = "Asia/Dubai"
+		event.save()
+		self.assertEqual(event.time_zone_label, "GST")
+
+	def test_label_cleared_when_time_zone_removed(self):
+		event = self._make_event(time_zone="Asia/Kolkata")
+		event.insert()
+		event.time_zone = ""
+		event.save()
+		self.assertEqual(event.time_zone_label, "")
+
+	def test_label_uses_event_start_date_for_dst(self):
+		"""July New York event shows EDT, not EST."""
+		event = self._make_event(
+			time_zone="America/New_York",
+			start_date="2026-07-10",
+			end_date="2026-07-10",
+		)
+		event.insert()
+		self.assertEqual(event.time_zone_label, "EDT")
+
+	def test_backfill_patch_skips_events_missing_start_fields(self):
+		"""Legacy rows can have time_zone without start fields; patch must not abort."""
+		event = self._make_event(time_zone="Asia/Kolkata")
+		event.insert()
+		frappe.db.set_value(
+			"Buzz Event",
+			event.name,
+			{"start_time": None, "time_zone_label": ""},
+			update_modified=False,
+		)
+
+		backfill_time_zone_labels()
+
+		self.assertEqual(frappe.db.get_value("Buzz Event", event.name, "time_zone_label"), "")
+
+
+class TestBuzzEventZoomMeeting(FrappeTestCase):
+	@classmethod
+	def setUpClass(cls):
+		super().setUpClass()
+		if not frappe.db.exists("Event Category", "Test Category"):
+			frappe.get_doc({"doctype": "Event Category", "category_name": "Test Category"}).insert(
+				ignore_permissions=True
+			)
+		if not frappe.db.exists("Event Host", "Test Host"):
+			frappe.get_doc({"doctype": "Event Host", "host_name": "Test Host"}).insert(
+				ignore_permissions=True
+			)
+
+	def tearDown(self):
+		frappe.db.rollback()
+
+	def _make_event(self):
+		return frappe.get_doc(
+			{
+				"doctype": "Buzz Event",
+				"title": "Meeting Event",
+				"category": "Test Category",
+				"host": "Test Host",
+				"start_date": "2026-08-01",
+				"end_date": "2026-08-01",
+				"start_time": "10:00:00",
+				"end_time": "11:00:00",
+			}
+		).insert(ignore_permissions=True)
+
+	def test_create_meeting_on_zoom_links_meeting_to_event(self):
+		from zoom_integration.tests.zoom_fixtures import create_meeting_response
+
+		meeting_controller = "zoom_integration.zoom_integration.doctype.zoom_meeting.zoom_meeting"
+		event = self._make_event()
+		response = create_meeting_response()
+
+		with patch(f"{meeting_controller}.create_zoom_session", return_value=response):
+			meeting = event.create_meeting_on_zoom()
+
+		self.assertTrue(meeting.name)
+		event.reload()
+		self.assertEqual(event.zoom_meeting, meeting.name)
+		self.assertEqual(meeting.zoom_meeting_id, str(response["id"]))
+
+	def test_event_stores_the_zoom_meeting_id_the_desk_link_is_built_from(self):
+		"""buzz_event.js builds https://zoom.us/meeting/<zoom_meeting> from this field."""
+		from zoom_integration.tests.zoom_fixtures import create_meeting_response
+
+		meeting_controller = "zoom_integration.zoom_integration.doctype.zoom_meeting.zoom_meeting"
+		event = self._make_event()
+		response = create_meeting_response()
+
+		with patch(f"{meeting_controller}.create_zoom_session", return_value=response):
+			event.create_meeting_on_zoom()
+
+		event.reload()
+		self.assertEqual(event.zoom_meeting, str(response["id"]))
+
+	def test_update_event_schedule_pushes_to_zoom_meeting(self):
+		from zoom_integration.tests.zoom_fixtures import CREATE_MEETING_RESPONSE
+
+		meeting_controller = "zoom_integration.zoom_integration.doctype.zoom_meeting.zoom_meeting"
+		event = self._make_event()
+
+		with patch(f"{meeting_controller}.create_zoom_session", return_value=CREATE_MEETING_RESPONSE):
+			event.create_meeting_on_zoom()
+
+		# Note: do not reload() — Time fields come back as timedelta and trip event
+		# validation's time diff. The in-memory doc keeps string times and has
+		# zoom_meeting set via db_set already.
+		with patch(f"{meeting_controller}.update_zoom_session") as mock_update:
+			event.end_time = "12:00:00"
+			event.save(ignore_permissions=True)
+
+		mock_update.assert_called_once()
+		self.assertEqual(mock_update.call_args.args[0], "meetings")

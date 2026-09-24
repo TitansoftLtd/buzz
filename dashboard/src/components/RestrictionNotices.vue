@@ -2,20 +2,14 @@
 	<div>
 		<!-- Single consolidated restriction notice -->
 		<div v-if="hasRestrictions" class="mb-4">
-			<div class="bg-surface-amber-1 border border-outline-amber-1 rounded-lg p-4">
+			<div class="bg-surface-amber-1 border border-outline-amber-1 rounded-6 p-4">
 				<div class="flex items-start">
-					<LucideTriangleAlert
-						class="w-5 h-5 text-ink-amber-2 mr-3 mt-0.5 flex-shrink-0"
-					/>
+					<LucideTriangleAlert class="w-5 h-5 text-ink-amber-5 mr-3 mt-0.5 flex-shrink-0" />
 					<div>
-						<p class="text-ink-amber-3 text-sm font-medium mb-2">
-							{{
-								__(
-									"Some options are no longer available as the event is approaching:"
-								)
-							}}
+						<p class="text-ink-amber-6 text-sm-medium mb-2">
+							{{ __("Some options are no longer available as the event is approaching:") }}
 						</p>
-						<ul class="text-ink-amber-3 text-sm space-y-1 list-disc list-inside">
+						<ul class="text-ink-amber-6 text-sm space-y-1 list-disc list-inside">
 							<li v-if="!canRequestCancellation && !cancellationRequest">
 								{{ __("Ticket cancellation requests") }}
 							</li>
@@ -29,9 +23,9 @@
 	</div>
 </template>
 
-<script setup>
-import { computed } from "vue";
-import LucideTriangleAlert from "~icons/lucide/triangle-alert";
+<script setup lang="ts">
+import { computed } from "vue"
+import LucideTriangleAlert from "~icons/lucide/triangle-alert"
 
 const props = defineProps({
 	canRequestCancellation: {
@@ -50,7 +44,7 @@ const props = defineProps({
 		type: Object,
 		default: null,
 	},
-});
+})
 
 // Computed property to check if any restrictions exist
 const hasRestrictions = computed(() => {
@@ -58,6 +52,6 @@ const hasRestrictions = computed(() => {
 		(!props.canRequestCancellation && !props.cancellationRequest) ||
 		!props.canTransferTickets ||
 		!props.canChangeAddOns
-	);
-});
+	)
+})
 </script>

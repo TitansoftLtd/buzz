@@ -1,11 +1,11 @@
 <!-- BookingSummary.vue -->
 <template>
-	<div class="bg-surface-gray-1 border border-outline-gray-1 rounded-lg p-4">
-		<h2 class="text-xl font-bold text-ink-gray-9 mb-4">{{ __("Booking Summary") }}</h2>
+	<div class="bg-surface-gray-1 border border-outline-gray-1 rounded-6 p-4">
+		<h2 class="text-2xl-bold text-ink-gray-9 mb-4">{{ __("Booking Summary") }}</h2>
 
 		<!-- Tickets Section -->
 		<div v-if="Object.keys(summary.tickets).length" class="mb-4">
-			<h3 class="text-lg font-semibold text-ink-gray-8 mb-2">{{ __("Tickets") }}</h3>
+			<h3 class="text-lg-semibold text-ink-gray-8 mb-2">{{ __("Tickets") }}</h3>
 			<div
 				v-for="(ticket, name) in summary.tickets"
 				:key="name"
@@ -18,16 +18,14 @@
 						class="text-sm text-ink-gray-5"
 					>
 						{{ Math.min(freeTicketCount, ticket.count) }} x
-						<span class="line-through">{{
-							formatPriceOrFree(ticket.price, ticket.currency)
-						}}</span>
+						<span class="line-through">{{ formatPriceOrFree(ticket.price, ticket.currency) }}</span>
 						{{ __("Free")
 						}}{{
 							ticket.count > freeTicketCount
 								? `, ${ticket.count - freeTicketCount} x ${formatPriceOrFree(
 										ticket.price,
-										ticket.currency
-								  )}`
+										ticket.currency,
+									)}`
 								: ""
 						}}
 					</span>
@@ -38,7 +36,11 @@
 					<span
 						v-if="ticket.remainingTickets >= 0"
 						class="text-xs flex items-center gap-1"
-						:class="ticket.count > ticket.remainingTickets ? 'text-red-600 font-medium' : 'text-ink-gray-4'"
+						:class="
+							ticket.count > ticket.remainingTickets
+								? 'text-red-600 font-medium'
+								: 'text-ink-gray-4'
+						"
 					>
 						<LucideTicket class="h-3 w-3" />
 						{{ __("Only {0} tickets available", [ticket.remainingTickets]) }}
@@ -48,10 +50,7 @@
 					{{
 						ticket.count <= freeTicketCount
 							? __("Free")
-							: formatPriceOrFree(
-									(ticket.count - freeTicketCount) * ticket.price,
-									ticket.currency
-							  )
+							: formatPriceOrFree((ticket.count - freeTicketCount) * ticket.price, ticket.currency)
 					}}
 				</span>
 				<span v-else-if="netAmount > 0" class="font-medium">{{
@@ -62,7 +61,7 @@
 
 		<!-- Add-ons Section -->
 		<div v-if="Object.keys(summary.add_ons).length" class="mb-4">
-			<h3 class="text-lg font-semibold text-ink-gray-8 mb-2">{{ __("Add-ons") }}</h3>
+			<h3 class="text-lg-semibold text-ink-gray-8 mb-2">{{ __("Add-ons") }}</h3>
 			<div
 				v-for="(addOn, name) in summary.add_ons"
 				:key="name"
@@ -72,16 +71,14 @@
 					<span>{{ __(addOn.title) }}</span>
 					<span v-if="freeAddOnCounts[name] > 0" class="text-sm text-ink-gray-5">
 						{{ Math.min(freeAddOnCounts[name], addOn.count) }} x
-						<span class="line-through">{{
-							formatPriceOrFree(addOn.price, addOn.currency)
-						}}</span>
+						<span class="line-through">{{ formatPriceOrFree(addOn.price, addOn.currency) }}</span>
 						{{ __("Free")
 						}}{{
 							addOn.count > freeAddOnCounts[name]
 								? `, ${addOn.count - freeAddOnCounts[name]} x ${formatPriceOrFree(
 										addOn.price,
-										addOn.currency
-								  )}`
+										addOn.currency,
+									)}`
 								: ""
 						}}
 					</span>
@@ -96,8 +93,8 @@
 							? __("Free")
 							: formatPriceOrFree(
 									(addOn.count - freeAddOnCounts[name]) * addOn.price,
-									addOn.currency
-							  )
+									addOn.currency,
+								)
 					}}
 				</span>
 				<span v-else-if="netAmount > 0" class="font-medium">{{
@@ -124,12 +121,8 @@
 				v-if="couponApplied && discountAmount > 0"
 				class="flex justify-between items-center text-green-600 mb-2"
 			>
-				<span>{{
-					couponType === "Free Tickets" ? __("Free Tickets") : __("Discount")
-				}}</span>
-				<span class="font-medium"
-					>-{{ formatPriceOrFree(discountAmount, totalCurrency) }}</span
-				>
+				<span>{{ couponType === "Free Tickets" ? __("Free Tickets") : __("Discount") }}</span>
+				<span class="font-medium">-{{ formatPriceOrFree(discountAmount, totalCurrency) }}</span>
 			</div>
 
 			<!-- Tax Section (exclusive only — shown as line item added to total) -->
@@ -143,16 +136,13 @@
 
 			<!-- Final Total Section -->
 			<hr v-if="shouldApplyTax" class="my-2 border-t border-outline-gray-1" />
-			<div class="flex justify-between items-center text-xl font-bold text-ink-gray-9">
+			<div class="flex justify-between items-center text-2xl-bold text-ink-gray-9">
 				<h3>{{ __("Total") }}</h3>
 				<span>{{ formatPriceOrFree(total, totalCurrency) }}</span>
 			</div>
 
 			<!-- Tax-inclusive note (shown below total) -->
-			<div
-				v-if="shouldApplyTax && taxInclusive"
-				class="text-sm text-ink-gray-5 text-right mt-3"
-			>
+			<div v-if="shouldApplyTax && taxInclusive" class="text-sm text-ink-gray-5 text-right mt-3">
 				{{
 					__("Inclusive of {0} {1} ({2}%)", [
 						formatPriceOrFree(taxAmount, totalCurrency),
@@ -167,15 +157,16 @@
 		<template v-else>
 			<hr class="my-2 border-t border-outline-gray-1" />
 			<div class="text-center pt-2">
-				<div class="text-xl font-bold text-green-600">{{ __("Free Event") }}</div>
+				<div class="text-2xl-bold text-green-600">{{ __("Free Event") }}</div>
 			</div>
 		</template>
 	</div>
 </template>
 
-<script setup>
-import { formatPriceOrFree } from "@/utils/currency";
-import LucideTicket from "~icons/lucide/ticket";
+<script setup lang="ts">
+import LucideTicket from "~icons/lucide/ticket"
+
+import { formatPriceOrFree } from "@/utils/currency"
 
 defineProps({
 	summary: {
@@ -238,5 +229,5 @@ defineProps({
 		type: String,
 		default: "INR",
 	},
-});
+})
 </script>
