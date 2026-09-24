@@ -15,9 +15,16 @@ def format_clock(value):
 	display_hours = hours % 12 or 12
 	return str(display_hours).zfill(2) + ":" + str(minutes).zfill(2) + " " + suffix
 
+route = frappe.form_dict.route
+if not route:
+	# The Builder editor previews this page without a route; show the latest published event.
+	route = frappe.db.get_value(
+		"Buzz Event", {"is_published": 1, "route": ["is", "set"]}, "route", order_by="start_date desc"
+	)
+
 event = frappe.db.get_value(
 	"Buzz Event",
-	{"route": frappe.form_dict.route, "is_published": 1},
+	{"route": route, "is_published": 1},
 	["name", "title", "route", "banner_image", "about", "short_description", "start_date", "end_date",
 		"start_time", "end_time", "time_zone_label", "venue", "host", "medium"],
 	as_dict=True,
