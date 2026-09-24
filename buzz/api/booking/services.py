@@ -1,5 +1,6 @@
 import hashlib
 import hmac
+import re
 from typing import TYPE_CHECKING
 
 import frappe
@@ -23,6 +24,8 @@ from buzz.api.booking.schemas import (
 )
 from buzz.payments import get_payment_link_for_booking
 from buzz.utils import ZOOM_BACKED_CATEGORIES, build_event_datetimes
+
+KRA_PIN_PATTERN = re.compile(r"^[A-Z]\d{9}[A-Z]$")
 
 if TYPE_CHECKING:
 	from buzz.events.doctype.buzz_event.buzz_event import BuzzEvent
@@ -178,6 +181,7 @@ class BookingService:
 
 	def append_attendees(self, booking: "EventBooking") -> None:
 		self.validate_zoom_last_names()
+		self.validate_kra_pins()
 		for attendee in self.request.attendees:
 			booking.append("attendees", self.attendee_row(attendee))
 
@@ -187,6 +191,16 @@ class BookingService:
 		for attendee in self.request.attendees:
 			if not (attendee.get("last_name") or "").strip():
 				frappe.throw(_("Last name is required for all attendees in Zoom events"))
+
+	def validate_kra_pins(self) -> None:
+		for attendee in self.request.attendees:
+			kra_pin = (attendee.get("kra_pin") or "").strip().upper()
+			if kra_pin and not KRA_PIN_PATTERN.match(kra_pin):
+				frappe.throw(
+					_("Invalid KRA PIN {0}. It should be a letter, 9 digits and a letter, e.g. A123456789Z").format(
+						kra_pin
+					)
+				)
 
 	def phone_field_labels(self) -> dict:
 		"""Label by fieldname for every Phone custom field on the event, booking- and
@@ -213,6 +227,7 @@ class BookingService:
 			"email": attendee.get("email"),
 			"phone_number": (attendee.get("phone_number") or "").strip() or None,
 			"organization": (attendee.get("organization") or "").strip() or None,
+			"kra_pin": (attendee.get("kra_pin") or "").strip().upper() or None,
 			"expectations": (attendee.get("expectations") or "").strip() or None,
 			"ticket_type": attendee.get("ticket_type"),
 			"add_ons": add_ons.name if add_ons else None,

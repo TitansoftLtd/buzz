@@ -15,6 +15,7 @@
   "email",
   "phone_number",
   "organization",
+  "kra_pin",
   "expectations",
   "amount",
   "currency",
@@ -66,6 +67,13 @@
    "fieldtype": "Data",
    "label": "Organization",
    "reqd": 1
+  },
+  {
+   "description": "e.g. A123456789Z",
+   "fieldname": "kra_pin",
+   "fieldtype": "Data",
+   "label": "KRA PIN",
+   "length": 11
   },
   {
    "fieldname": "expectations",
@@ -129,7 +137,7 @@
  "index_web_pages_for_search": 1,
  "istable": 1,
  "links": [],
- "modified": "2025-11-01 11:33:49.166876",
+ "modified": "2026-09-24 14:30:00.000000",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Event Booking Attendee",

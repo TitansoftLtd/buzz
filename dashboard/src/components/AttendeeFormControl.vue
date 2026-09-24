@@ -56,6 +56,14 @@
 				required
 				type="text"
 			/>
+			<FormControl
+				v-model="attendee.kra_pin"
+				:label="__('KRA PIN')"
+				:placeholder="__('e.g. A123456789Z')"
+				:maxlength="11"
+				type="text"
+				class="uppercase"
+			/>
 
 			<!-- Ticket Type -->
 

@@ -619,6 +619,7 @@ const createNewAttendee = (): BookingAttendee => {
 		email: "",
 		phone_number: "",
 		organization: "",
+		kra_pin: "",
 		expectations: "",
 		// Use default ticket type from event details, or first available
 		ticket_type: getDefaultTicketType(),
