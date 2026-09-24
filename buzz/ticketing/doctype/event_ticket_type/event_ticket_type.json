@@ -14,6 +14,7 @@
   "is_published",
   "auto_unpublish_after",
   "max_tickets_available",
+  "free_ticket",
   "stats_section",
   "tickets_sold",
   "column_break_ygut",
@@ -70,6 +71,14 @@
    "non_negative": 1
   },
   {
+   "default": "0",
+   "depends_on": "eval:!doc.price",
+   "description": "Only for ticket types priced 0. When the event requires attendance confirmation, holders of these tickets are asked to confirm, and unconfirmed tickets are auto-cancelled after the deadline.",
+   "fieldname": "free_ticket",
+   "fieldtype": "Check",
+   "label": "Free Ticket"
+  },
+  {
    "depends_on": "eval:doc.is_published",
    "description": "For Early Bird, etc.",
    "fieldname": "auto_unpublish_after",
@@ -107,7 +116,7 @@
    "link_fieldname": "ticket_type"
   }
  ],
- "modified": "2025-10-28 16:17:49.999214",
+ "modified": "2026-09-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Event Ticket Type",

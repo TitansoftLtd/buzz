@@ -129,19 +129,20 @@
    "options": "Bulk Ticket Coupon"
   },
   {
+   "depends_on": "confirmation_status",
    "fieldname": "confirmation_section",
    "fieldtype": "Section Break",
    "label": "Attendance Confirmation"
   },
   {
    "allow_on_submit": 1,
-   "default": "Pending",
    "fieldname": "confirmation_status",
    "fieldtype": "Select",
    "in_list_view": 1,
    "in_standard_filter": 1,
    "label": "Confirmation Status",
-   "options": "Pending\nConfirmed\nDeclined\nCancelled",
+   "options": "\nPending\nConfirmed\nDeclined\nCancelled",
+   "print_hide_if_no_value": 1,
    "read_only": 1
   },
   {
@@ -149,6 +150,7 @@
    "fieldname": "confirmed_at",
    "fieldtype": "Datetime",
    "label": "Confirmed At",
+   "print_hide_if_no_value": 1,
    "read_only": 1
   },
   {
@@ -169,6 +171,7 @@
    "fieldname": "confirmation_sent_at",
    "fieldtype": "Datetime",
    "label": "Confirmation Email Sent At",
+   "print_hide_if_no_value": 1,
    "read_only": 1
   },
   {
@@ -176,6 +179,7 @@
    "fieldname": "confirmation_reminder_sent_at",
    "fieldtype": "Datetime",
    "label": "Reminder Sent At",
+   "print_hide_if_no_value": 1,
    "read_only": 1
   },
   {
@@ -199,7 +203,7 @@
    "link_fieldname": "ticket"
   }
  ],
- "modified": "2026-08-17 10:00:00.000000",
+ "modified": "2026-09-25 00:30:00.000000",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Event Ticket",

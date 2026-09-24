@@ -22,24 +22,15 @@ def build_event_booking_data(event_route: str) -> EventBookingDataResponse:
 	payment_gateways += [method["title"] for method in offline_methods]
 
 	is_guest = frappe.session.user == "Guest"
+	guest_booking_disabled = is_guest and not event_doc.allow_guest_booking
 	registrations_closed = are_registrations_closed(event_doc)
 	available_ticket_types = get_available_ticket_types(event_doc.name)
 	registrations_full = not available_ticket_types and not registrations_closed
 
-	if is_guest and not event_doc.allow_guest_booking:
-		return EventBookingDataResponse(
-			registrations_closed=registrations_closed,
-			registrations_full=registrations_full,
-			guest_booking_disabled=True,
-			event_details=get_event_details(event_doc),
-			available_ticket_types=[],
-			available_add_ons=[],
-			tax_settings=None,
-			custom_fields=[],
-			payment_gateways=[],
-			offline_payment_enabled=False,
-			offline_methods=[],
-		)
+	# Guests who can't book still see ticket prices; the form asks them to log in on submit.
+	if guest_booking_disabled:
+		payment_gateways = []
+		offline_methods = []
 
 	if is_guest:
 		available_ticket_types = [
@@ -58,6 +49,7 @@ def build_event_booking_data(event_route: str) -> EventBookingDataResponse:
 	return EventBookingDataResponse(
 		registrations_closed=registrations_closed,
 		registrations_full=registrations_full,
+		guest_booking_disabled=guest_booking_disabled,
 		event_details=get_event_details(event_doc),
 		available_ticket_types=available_ticket_types,
 		available_add_ons=get_available_add_ons(event_doc.name),
@@ -67,7 +59,7 @@ def build_event_booking_data(event_route: str) -> EventBookingDataResponse:
 			tax_label=event_doc.tax_label or "Tax",
 			tax_percentage=event_doc.tax_percentage or 0,
 		),
-		custom_fields=get_custom_fields(event_doc.name, applied_to=None),
+		custom_fields=[] if guest_booking_disabled else get_custom_fields(event_doc.name, applied_to=None),
 		payment_gateways=payment_gateways,
 		offline_payment_enabled=len(offline_methods) > 0,
 		offline_methods=offline_methods,

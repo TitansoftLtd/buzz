@@ -40,19 +40,22 @@ def belongs_to_user(doc, user: str) -> bool:
 	return False
 
 
-def owned_query_conditions(user: str | None = None, doctype: str | None = None, **kwargs) -> Criterion | None:
+def owned_query_conditions(user: str | None = None, doctype: str | None = None, **kwargs) -> str | None:
 	user = user or frappe.session.user
 	if is_unrestricted(user):
 		return None
 
 	table = frappe.qb.DocType(doctype)
-	criterion = table.owner == user
+	criterion: Criterion = table.owner == user
 	if identity_field := IDENTITY_FIELDS.get(doctype):
 		criterion |= table[identity_field] == user
 	if doctype == "Event Ticket":
 		criterion |= table.booking.isin(my_bookings(user))
 
-	return criterion
+	# Frappe 16.32 joins these conditions as SQL strings; a bare Criterion stringifies with
+	# ANSI double quotes, which MariaDB reads as string literals rather than columns.
+	quote_char = '"' if frappe.db.db_type == "postgres" else "`"
+	return criterion.get_sql(quote_char=quote_char, with_namespace=True)
 
 
 def owned_has_permission(doc, ptype: str = "read", user: str | None = None, **kwargs) -> bool:

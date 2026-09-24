@@ -542,7 +542,7 @@
   },
   {
    "default": "0",
-   "description": "When enabled, attendees will be emailed asking to confirm attendance. Unconfirmed tickets will be auto-cancelled after the deadline.",
+   "description": "Applies only to ticket types marked Free Ticket. Their attendees are emailed asking to confirm attendance, and unconfirmed tickets are auto-cancelled after the deadline.",
    "fieldname": "require_attendance_confirmation",
    "fieldtype": "Check",
    "label": "Require Attendance Confirmation"
@@ -649,7 +649,7 @@
    "link_fieldname": "event"
   }
  ],
- "modified": "2026-08-27 12:00:00.000000",
+ "modified": "2026-09-25 00:00:00.000000",
  "modified_by": "Administrator",
  "module": "Events",
  "name": "Buzz Event",

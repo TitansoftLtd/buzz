@@ -3,6 +3,7 @@
 
 import frappe
 from frappe.model.document import Document
+from frappe.utils import flt
 
 
 class EventTicketType(Document):
@@ -17,12 +18,18 @@ class EventTicketType(Document):
 		auto_unpublish_after: DF.Date | None
 		currency: DF.Link
 		event: DF.Link
+		free_ticket: DF.Check
 		is_published: DF.Check
 		max_tickets_available: DF.Int
 		name: DF.Int | None
 		price: DF.Currency
 		title: DF.Data
 	# end: auto-generated types
+
+	def validate(self):
+		# Free tickets are the ones attendance confirmation may auto-cancel; never a paid one.
+		if flt(self.price) > 0:
+			self.free_ticket = 0
 
 	def are_tickets_available(self, num_tickets: int) -> bool:
 		if self.remaining_tickets != -1 and self.remaining_tickets < num_tickets:

@@ -53,6 +53,12 @@ class EventTicket(Document):
 	def before_submit(self):
 		self.validate_coupon_usage()
 		self.generate_qr_code()
+		self.set_confirmation_status()
+
+	def set_confirmation_status(self):
+		# Only Free Ticket types go through attendance confirmation; others carry no status.
+		is_free_ticket = frappe.get_cached_value("Event Ticket Type", self.ticket_type, "free_ticket")
+		self.confirmation_status = "Pending" if is_free_ticket else ""
 
 	def on_submit(self):
 		try:
@@ -181,7 +187,9 @@ class EventTicket(Document):
 
 	def on_cancel(self):
 		self.ignore_linked_doctypes = ["Event Booking", "Ticket Cancellation Request"]
-		self.db_set("confirmation_status", "Cancelled", update_modified=False)
+		# A ticket auto-cancelled for not confirming stays Declined.
+		if self.confirmation_status and self.confirmation_status != "Declined":
+			self.db_set("confirmation_status", "Cancelled", update_modified=False)
 		self.send_cancellation_email()
 
 	def send_cancellation_email(self):

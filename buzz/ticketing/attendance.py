@@ -16,6 +16,15 @@ def _get_confirm_url(token: str) -> str:
 	return f"{frappe.utils.get_url()}/api/method/buzz.api.confirm_attendance?token={token}"
 
 
+def get_confirmation_ticket_types(event: str) -> list:
+	"""Ticket types of `event` marked Free Ticket, whose attendees must confirm attendance."""
+	return frappe.get_all(
+		"Event Ticket Type",
+		filters={"event": event, "free_ticket": 1, "price": 0},
+		pluck="name",
+	)
+
+
 def _send_confirmation_email(ticket, event_doc, is_reminder: bool = False) -> None:
 	if not ticket.confirmation_token:
 		ticket.db_set("confirmation_token", _generate_token(), update_modified=False)
@@ -136,10 +145,29 @@ def send_confirmation_emails_for_event(event: str) -> int:
 	if not event_doc.require_attendance_confirmation:
 		frappe.throw(_("Attendance confirmation is not enabled for this event"))
 
+	ticket_types = get_confirmation_ticket_types(event)
+	if not ticket_types:
+		frappe.throw(_("No ticket type of this event is marked Free Ticket"))
+
+	# Tickets booked before their type was marked Free Ticket carry no status yet.
+	frappe.db.set_value(
+		"Event Ticket",
+		{
+			"event": event,
+			"ticket_type": ["in", ticket_types],
+			"docstatus": 1,
+			"confirmation_status": ["is", "not set"],
+		},
+		"confirmation_status",
+		"Pending",
+		update_modified=False,
+	)
+
 	tickets = frappe.get_all(
 		"Event Ticket",
 		filters={
 			"event": event,
+			"ticket_type": ["in", ticket_types],
 			"docstatus": 1,
 			"confirmation_status": "Pending",
 			"confirmation_sent_at": ["is", "not set"],
@@ -175,6 +203,10 @@ def process_attendance_confirmations() -> None:
 		if not event.confirmation_deadline:
 			continue
 
+		ticket_types = get_confirmation_ticket_types(event.name)
+		if not ticket_types:
+			continue
+
 		deadline = getdate(event.confirmation_deadline)
 		today_date = getdate(today())
 		event_doc = frappe.get_cached_doc("Buzz Event", event.name)
@@ -185,6 +217,7 @@ def process_attendance_confirmations() -> None:
 				"Event Ticket",
 				filters={
 					"event": event.name,
+					"ticket_type": ["in", ticket_types],
 					"docstatus": 1,
 					"confirmation_status": "Pending",
 				},
@@ -210,6 +243,7 @@ def process_attendance_confirmations() -> None:
 				"Event Ticket",
 				filters={
 					"event": event.name,
+					"ticket_type": ["in", ticket_types],
 					"docstatus": 1,
 					"confirmation_status": "Pending",
 					"confirmation_reminder_sent_at": ["is", "not set"],

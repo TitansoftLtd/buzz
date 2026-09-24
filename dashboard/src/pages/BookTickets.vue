@@ -120,6 +120,66 @@
 				</div>
 			</div>
 		</div>
+		<div v-else-if="guestBookingDisabled">
+			<EventDetailsHeader :event-details="eventBookingData.eventDetails || {}" />
+			<div class="grid grid-cols-1 lg:grid-cols-2 gap-8 items-stretch">
+				<div class="bg-surface-gray-1 border border-outline-gray-1 rounded-6 p-6">
+					<h2 class="text-lg-semibold text-ink-gray-9 mb-4">{{ __("Tickets") }}</h2>
+					<div class="space-y-3">
+						<div
+							v-for="ticketType in eventBookingData.availableTicketTypes"
+							:key="ticketType.name"
+							class="flex items-center gap-4 bg-surface-white border border-outline-gray-2 rounded-6 p-4"
+						>
+							<div
+								class="flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-surface-gray-2"
+							>
+								<span class="text-xl leading-none" aria-hidden="true">🎟️</span>
+							</div>
+							<div class="flex-1 min-w-0">
+								<div class="text-base-medium text-ink-gray-8">{{ __(ticketType.title ?? "") }}</div>
+								<div
+									v-if="(ticketType.remaining_tickets ?? -1) >= 0"
+									class="text-sm text-ink-gray-5 mt-0.5"
+								>
+									{{ __("{0} tickets left", [ticketType.remaining_tickets]) }}
+								</div>
+							</div>
+							<div class="text-lg-semibold text-ink-gray-9">
+								{{ formatPriceOrFree(ticketType.price, ticketType.currency) }}
+							</div>
+						</div>
+					</div>
+				</div>
+				<div
+					class="flex flex-col justify-center bg-surface-gray-1 border border-outline-gray-1 rounded-6 p-6"
+				>
+					<div>
+						<div
+							class="mx-auto flex h-12 w-12 items-center justify-center rounded-full bg-surface-white border border-outline-gray-2 mb-4"
+						>
+							<LucideLock class="h-5 w-5 text-ink-gray-7" />
+						</div>
+						<h3 class="text-lg-semibold text-ink-gray-9 text-center mb-1">
+							{{ __("Log in or sign up to book") }}
+						</h3>
+						<p class="text-base text-ink-gray-6 text-center mb-6">
+							{{ __("Sign in or create an account to reserve your tickets for this event.") }}
+						</p>
+						<div
+							v-if="startingPrice"
+							class="flex justify-between items-baseline border-t border-outline-gray-2 pt-4 mb-6"
+						>
+							<span class="text-sm text-ink-gray-6">{{ __("Tickets from") }}</span>
+							<span class="text-xl-bold text-ink-gray-9">{{ startingPrice }}</span>
+						</div>
+						<Button variant="solid" size="lg" class="w-full" @click="openLoginDialog()">
+							{{ __("Log In or Sign Up") }}
+						</Button>
+					</div>
+				</div>
+			</div>
+		</div>
 		<div v-else>
 			<BookingForm
 				v-if="eventBookingData.availableAddOns && eventBookingData.availableTicketTypes"
@@ -141,8 +201,10 @@
 import { FormControl, Spinner, createResource, usePageMeta } from "frappe-ui"
 import { computed, reactive, ref, watch } from "vue"
 import LucideCheckCircle from "~icons/lucide/check-circle"
+import LucideLock from "~icons/lucide/lock"
 import LucideTicketX from "~icons/lucide/ticket-x"
 
+import { useLoginDialog } from "@/composables/useLoginDialog"
 import { session } from "@/data/session"
 import type {
 	AvailableAddOn,
@@ -151,8 +213,10 @@ import type {
 	FrappeField,
 	OfflineMethod,
 } from "@/types"
+import { formatPriceOrFree } from "@/utils/currency"
 
 import BookingForm from "../components/BookingForm.vue"
+import EventDetailsHeader from "../components/EventDetailsHeader.vue"
 
 const eventBookingData = reactive<{
 	availableAddOns: AvailableAddOn[] | null
@@ -175,6 +239,18 @@ const eventBookingData = reactive<{
 const eventNotFound = ref(false)
 const registrationsClosed = ref(false)
 const registrationsFull = ref(false)
+const guestBookingDisabled = ref(false)
+
+const { open: openLoginDialog } = useLoginDialog()
+
+const startingPrice = computed(() => {
+	const ticketTypes = eventBookingData.availableTicketTypes || []
+	if (!ticketTypes.length) return ""
+	const cheapest = ticketTypes.reduce((lowest, ticketType) =>
+		(ticketType.price ?? 0) < (lowest.price ?? 0) ? ticketType : lowest,
+	)
+	return formatPriceOrFree(cheapest.price, cheapest.currency)
+})
 
 const props = defineProps({
 	eventRoute: {
@@ -250,6 +326,7 @@ const eventBookingResource = createResource({
 		eventBookingData.offlineMethods = data.offline_methods || []
 		registrationsClosed.value = data.registrations_closed || false
 		registrationsFull.value = data.registrations_full || false
+		guestBookingDisabled.value = data.guest_booking_disabled || false
 	},
 	onError: (error: FrappeError) => {
 		if (error.message?.includes("DoesNotExistError")) {
