@@ -78,6 +78,27 @@ sponsors = frappe.get_all(
 for sponsor in sponsors:
 	sponsor.website = sponsor.website or "#"
 
+form_labels = {
+	"Talk Proposal": "Propose a Talk",
+	"Sponsorship Enquiry": "Become a Sponsor",
+	"Event Feedback": "Give Feedback",
+	"Event Proposal": "Propose an Event",
+}
+forms = []
+for form in frappe.get_all(
+	"Buzz Event Form",
+	filters={"parent": event.name, "parenttype": "Buzz Event", "publish": 1},
+	fields=["form_doctype", "route", "auto_close_at"],
+	order_by="idx",
+):
+	if form.auto_close_at and frappe.utils.get_datetime(form.auto_close_at) < frappe.utils.now_datetime():
+		continue
+	forms.append({
+		"label": form_labels.get(form.form_doctype, form.form_doctype),
+		"url": "/b/" + event.route + "/" + form.route,
+	})
+data.forms = forms
+
 # Builder applies page_title as the tab title only when a `title` key is also present.
 data.title = event.title
 data.page_title = event.title
