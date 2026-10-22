@@ -1,0 +1,34 @@
+{
+ "app": "buzz",
+ "creation": "2026-10-22 12:00:00.000000",
+ "docstatus": 0,
+ "doctype": "Sidebar",
+ "header_icon": "megaphone",
+ "idx": 0,
+ "items": [
+  {
+   "added": 0,
+   "child": 0,
+   "collapsible": 1,
+   "hidden": 0,
+   "icon": "megaphone",
+   "indent": 0,
+   "is_default_module": 0,
+   "keep_closed": 0,
+   "label": "Buzz Campaign",
+   "link_to": "Buzz Campaign",
+   "link_type": "DocType",
+   "open_in_new_tab": 1,
+   "show_arrow": 0,
+   "type": "Link"
+  }
+ ],
+ "merged_from": "[\"Buzz Marketing\"]",
+ "modified": "2026-10-22 12:00:00.000000",
+ "modified_by": "Administrator",
+ "module": "Buzz Marketing",
+ "name": "Buzz Marketing",
+ "owner": "Administrator",
+ "standard": 1,
+ "title": "Buzz Marketing"
+}
