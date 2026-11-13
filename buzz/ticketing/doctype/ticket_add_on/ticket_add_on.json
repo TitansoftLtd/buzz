@@ -13,7 +13,9 @@
   "column_break_lbak",
   "currency",
   "user_selects_option",
-  "options"
+  "options",
+  "mandatory_section",
+  "mandatory_for_ticket_types"
  ],
  "fields": [
   {
@@ -71,12 +73,24 @@
    "fieldname": "enabled",
    "fieldtype": "Check",
    "label": "Enabled?"
+  },
+  {
+   "fieldname": "mandatory_section",
+   "fieldtype": "Section Break",
+   "label": "Mandatory"
+  },
+  {
+   "description": "Attendees booking any of these ticket types must take this add-on (it is pre-selected and cannot be removed). Leave empty to keep it optional.",
+   "fieldname": "mandatory_for_ticket_types",
+   "fieldtype": "Table MultiSelect",
+   "label": "Mandatory for Ticket Types",
+   "options": "Add-on Mandatory Ticket Type"
   }
  ],
  "grid_page_length": 50,
  "index_web_pages_for_search": 1,
  "links": [],
- "modified": "2025-11-08 15:25:00.872093",
+ "modified": "2026-11-13 18:40:00.000000",
  "modified_by": "Administrator",
  "module": "Ticketing",
  "name": "Ticket Add-on",

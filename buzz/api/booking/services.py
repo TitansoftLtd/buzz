@@ -14,7 +14,12 @@ from frappe.utils import (
 )
 from frappe.utils.password import get_encryption_key
 
-from buzz.api.booking.exceptions import AddOnNotForEvent, InvalidAddOnValue, RegistrationsClosed
+from buzz.api.booking.exceptions import (
+	AddOnNotForEvent,
+	InvalidAddOnValue,
+	MandatoryAddOnMissing,
+	RegistrationsClosed,
+)
 from buzz.api.booking.guests import get_or_create_guest_user, verify_guest_otp
 from buzz.api.booking.schemas import (
 	BookingRequest,
@@ -23,6 +28,7 @@ from buzz.api.booking.schemas import (
 	PaymentLinkResponse,
 )
 from buzz.payments import get_payment_link_for_booking
+from buzz.ticketing.doctype.ticket_add_on.ticket_add_on import get_mandatory_ticket_types
 from buzz.utils import ZOOM_BACKED_CATEGORIES, build_event_datetimes
 
 KRA_PIN_PATTERN = re.compile(r"^[A-Z]\d{9}[A-Z]$")
@@ -85,12 +91,29 @@ class BookingService:
 					options = (catalog.options or "").split("\n")
 					if add_on.get("value") not in options:
 						InvalidAddOnValue.throw(value=add_on.get("value"))
+		self.validate_mandatory_add_ons(allowed)
+
+	def validate_mandatory_add_ons(self, allowed: dict) -> None:
+		"""Every attendee must carry the add-ons marked mandatory for their ticket type."""
+		mandatory_ticket_types = get_mandatory_ticket_types(list(allowed))
+		if not mandatory_ticket_types:
+			return
+
+		for attendee in self.request.attendees:
+			ticket_type = str(attendee.get("ticket_type") or "")
+			selected_add_ons = {add_on["add_on"] for add_on in attendee.get("add_ons") or []}
+			for add_on_name, ticket_types in mandatory_ticket_types.items():
+				if ticket_type in ticket_types and add_on_name not in selected_add_ons:
+					ticket_type_title = frappe.db.get_value("Event Ticket Type", ticket_type, "title")
+					MandatoryAddOnMissing.throw(
+						add_on=allowed[add_on_name].title, ticket_type=ticket_type_title or ticket_type
+					)
 
 	def allowed_add_ons(self) -> dict:
 		rows = frappe.db.get_all(
 			"Ticket Add-on",
 			filters={"event": self.request.event, "enabled": 1},
-			fields=["name", "options", "user_selects_option"],
+			fields=["name", "title", "options", "user_selects_option"],
 		)
 		return {row.name: row for row in rows}
 

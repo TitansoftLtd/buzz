@@ -115,7 +115,12 @@
 						:model-value="getAddOnSelected(addOn.name)"
 						@update:model-value="updateAddOnSelection(addOn.name, $event)"
 						:id="`add_on_${addOn.name}_${index}`"
-						:label="__(addOn.title ?? '')"
+						:label="
+							isAddOnMandatory(addOn)
+								? `${__(addOn.title ?? '')} (${__('required')})`
+								: __(addOn.title ?? '')
+						"
+						:disabled="isAddOnMandatory(addOn)"
 					/>
 					<div class="text-ink-gray-5 text-sm/4" v-if="addOn.description">
 						<p>
@@ -129,6 +134,7 @@
 						:model-value="getAddOnOption(addOn.name)"
 						@update:model-value="updateAddOnOption(addOn.name, $event)"
 						type="select"
+						:placeholder="__('Select {0}', [__(addOn.title ?? '').trim()])"
 						:options="
 							(addOn.options ?? []).map((option) => ({
 								label: __(option),
@@ -145,7 +151,7 @@
 
 <script setup lang="ts">
 import { Tooltip } from "frappe-ui"
-import { type PropType, computed } from "vue"
+import { type PropType, computed, watch } from "vue"
 
 import { type FrappeField, getFieldDefaultValue } from "@/composables/useCustomFields"
 import { formatPriceOrFree } from "@/utils/currency"
@@ -167,6 +173,7 @@ interface AvailableAddOn {
 	price?: number
 	options?: string[]
 	user_selects_option?: 0 | 1 | boolean
+	mandatory_for_ticket_types?: string[]
 }
 
 interface AttendeeAddOnSelection {
@@ -208,10 +215,9 @@ const ensureAddOnExists = (addOnName: string) => {
 		props.attendee.add_ons = {}
 	}
 	if (!props.attendee.add_ons[addOnName]) {
-		const addOn = props.availableAddOns.find((a) => a.name === addOnName)
 		props.attendee.add_ons[addOnName] = {
 			selected: false,
-			option: addOn?.options ? addOn.options[0] || null : null,
+			option: null,
 		}
 	}
 }
@@ -228,21 +234,32 @@ const getAddOnOption = (addOnName: string) => {
 
 const updateAddOnSelection = (addOnName: string, selected: boolean) => {
 	ensureAddOnExists(addOnName)
+	// The size/meal choice is left empty on purpose: the attendee must pick one
 	props.attendee.add_ons![addOnName].selected = selected
-
-	// If selecting an add-on and it has options, ensure the first option is selected
-	if (selected) {
-		const addOn = props.availableAddOns.find((a) => a.name === addOnName)
-		if (addOn?.options && addOn.options.length > 0 && !props.attendee.add_ons![addOnName].option) {
-			props.attendee.add_ons![addOnName].option = addOn.options[0]
-		}
-	}
 }
 
 const updateAddOnOption = (addOnName: string, option: string) => {
 	ensureAddOnExists(addOnName)
 	props.attendee.add_ons![addOnName].option = option
 }
+
+const isAddOnMandatory = (addOn: AvailableAddOn) =>
+	(addOn.mandatory_for_ticket_types ?? []).includes(String(props.attendee.ticket_type ?? ""))
+
+// Pre-select add-ons that are mandatory for the attendee's ticket type; the checkbox
+// is disabled while mandatory, so it can't be unticked. Switching to a ticket type
+// where it's optional leaves it selected, and the attendee may untick it then.
+watch(
+	() => [props.attendee.ticket_type, props.availableAddOns],
+	() => {
+		for (const addOn of props.availableAddOns) {
+			if (isAddOnMandatory(addOn) && !getAddOnSelected(addOn.name)) {
+				updateAddOnSelection(addOn.name, true)
+			}
+		}
+	},
+	{ immediate: true },
+)
 
 // Custom fields helper methods
 const ensureCustomFieldsExists = () => {
