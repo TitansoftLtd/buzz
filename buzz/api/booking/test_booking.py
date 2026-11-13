@@ -10,7 +10,12 @@ from buzz.api.booking import (
 	send_guest_booking_otp,
 	validate_coupon,
 )
-from buzz.api.booking.exceptions import AddOnNotForEvent, InvalidAddOnValue, RegistrationsClosed
+from buzz.api.booking.exceptions import (
+	AddOnNotForEvent,
+	InvalidAddOnValue,
+	MandatoryAddOnMissing,
+	RegistrationsClosed,
+)
 from buzz.api.booking.schemas import BookingRequest
 from buzz.api.forms.test_forms import ensure_prompt_named_record
 
@@ -440,6 +445,94 @@ class TestBookingSelectionValidation(BookingTestCase):
 			self.book([self.attendee(add_ons=[{"add_on": self.add_on.name, "value": "Vegetarian meal"}])])
 		booking = frappe.get_last_doc("Event Booking")
 		self.assertEqual(booking.attendees[0].add_on_total, 500)
+
+
+class TestBookingMandatoryAddOns(BookingTestCase):
+	"""An add-on marked mandatory for a ticket type must be on every attendee holding
+	that ticket type; other ticket types may still skip it."""
+
+	def setUp(self):
+		super().setUp()
+		self.sponsor_ticket_type = frappe.get_doc(
+			{
+				"doctype": "Event Ticket Type",
+				"event": self.event.name,
+				"title": f"Sponsor {frappe.generate_hash(length=6)}",
+				"price": 0,
+				"is_published": 1,
+			}
+		).insert(ignore_permissions=True)
+		self.t_shirt = frappe.get_doc(
+			{
+				"doctype": "Ticket Add-on",
+				"event": self.event.name,
+				"title": f"T-shirt {frappe.generate_hash(length=6)}",
+				"price": 0,
+				"enabled": 1,
+				"user_selects_option": 1,
+				"options": "S\nM\nL",
+				"mandatory_for_ticket_types": [{"ticket_type": self.sponsor_ticket_type.name}],
+			}
+		).insert(ignore_permissions=True)
+
+	def book(self, ticket_type, add_ons=None):
+		attendee = {
+			"first_name": "Booker",
+			"email": "booker@example.com",
+			"phone_number": VALID_PHONE,
+			"organization": "Sponsor Org",
+			"ticket_type": str(ticket_type),
+			"add_ons": add_ons or [],
+		}
+		return process_booking(self.booking_request(attendees=[attendee]))
+
+	def test_missing_mandatory_add_on_is_refused(self):
+		with self.assertRaises(MandatoryAddOnMissing):
+			self.book(self.sponsor_ticket_type.name)
+
+	def test_mandatory_add_on_is_accepted(self):
+		self.book(self.sponsor_ticket_type.name, [{"add_on": self.t_shirt.name, "value": "L"}])
+		booking = frappe.get_last_doc("Event Booking")
+		self.assertEqual(str(booking.attendees[0].ticket_type), str(self.sponsor_ticket_type.name))
+
+	def test_other_ticket_types_may_skip_it(self):
+		self.book(self.free_ticket_type.name)
+
+	def test_event_data_lists_mandatory_ticket_types(self):
+		data = get_event_booking_data(self.event.route)
+		add_on = next(row for row in data.available_add_ons if row["name"] == self.t_shirt.name)
+		self.assertEqual(add_on["mandatory_for_ticket_types"], [str(self.sponsor_ticket_type.name)])
+
+	def test_ticket_type_from_another_event_is_rejected_on_add_on(self):
+		self.t_shirt.append("mandatory_for_ticket_types", {"ticket_type": self.foreign_ticket_type().name})
+		with self.assertRaises(frappe.ValidationError):
+			self.t_shirt.save(ignore_permissions=True)
+
+	def foreign_ticket_type(self):
+		category = frappe.db.get_value("Buzz Event", self.event.name, "category")
+		host = frappe.db.get_value("Buzz Event", self.event.name, "host")
+		foreign_event = frappe.get_doc(
+			{
+				"doctype": "Buzz Event",
+				"title": f"Foreign Event {frappe.generate_hash(length=6)}",
+				"start_date": "2030-01-01",
+				"end_date": "2030-01-01",
+				"start_time": "10:00:00",
+				"end_time": "18:00:00",
+				"medium": "Online",
+				"category": category,
+				"host": host,
+			}
+		).insert(ignore_permissions=True)
+		return frappe.get_doc(
+			{
+				"doctype": "Event Ticket Type",
+				"event": foreign_event.name,
+				"title": "Foreign",
+				"price": 0,
+				"is_published": 1,
+			}
+		).insert(ignore_permissions=True)
 
 
 class TestBookingPhoneCustomFields(BookingTestCase):

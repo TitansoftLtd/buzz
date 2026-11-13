@@ -34,3 +34,8 @@ class AddOnNotForEvent(BuzzAPIError):
 class InvalidAddOnValue(BuzzAPIError):
 	title = _lt("Invalid Option")
 	message = _lt("{value} is not a valid option for this add-on.")
+
+
+class MandatoryAddOnMissing(BuzzAPIError):
+	title = _lt("Add-on Required")
+	message = _lt("{add_on} is required for {ticket_type} tickets.")

@@ -6,6 +6,7 @@ from frappe import _
 from buzz.api.booking.schemas import EventBookingDataResponse, TaxSettings
 from buzz.api.booking.services import are_registrations_closed
 from buzz.payments import get_payment_gateways_for_event
+from buzz.ticketing.doctype.ticket_add_on.ticket_add_on import get_mandatory_ticket_types
 
 if TYPE_CHECKING:
 	from buzz.events.doctype.buzz_event.buzz_event import BuzzEvent
@@ -109,9 +110,11 @@ def get_available_add_ons(event_id: str) -> list:
 	add_ons = frappe.db.get_all(
 		"Ticket Add-on", filters={"event": event_id, "enabled": 1}, fields=["*"], order_by="title"
 	)
+	mandatory_ticket_types = get_mandatory_ticket_types([add_on.name for add_on in add_ons])
 	for add_on in add_ons:
 		if add_on.user_selects_option:
 			add_on.options = add_on.options.split("\n")
+		add_on.mandatory_for_ticket_types = sorted(mandatory_ticket_types.get(add_on.name, set()))
 	return add_ons
 
 

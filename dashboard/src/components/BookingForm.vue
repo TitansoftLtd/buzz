@@ -629,7 +629,7 @@ const createNewAttendee = (): BookingAttendee => {
 	for (const addOn of props.availableAddOns) {
 		newAttendee.add_ons![addOn.name] = {
 			selected: false,
-			option: addOn.options ? addOn.options[0] || null : null,
+			option: null,
 		}
 	}
 
@@ -911,7 +911,7 @@ watch(
 					if (!attendee.add_ons[addOn.name]) {
 						attendee.add_ons[addOn.name] = {
 							selected: false,
-							option: addOn.options ? addOn.options[0] || null : null,
+							option: null,
 						}
 					}
 				}
@@ -964,6 +964,37 @@ watch(netAmount, (newVal) => {
 		if (newVal < (couponData.value?.min_order_value ?? 0)) {
 			removeCoupon()
 			toast.warning(__("Coupon removed - minimum order not met"))
+		}
+	}
+})
+
+// Attendees covered by a Free Tickets coupon get its free add-ons (e.g. meal, T-shirt)
+// ticked by default; they still pick the size/meal themselves. This runs only when an attendee
+// first becomes covered, so someone who unticks an add-on afterwards keeps it unticked.
+const couponCoveredAttendeeIds = computed(() => {
+	const coupon = couponData.value
+	if (!couponApplied.value || coupon?.coupon_type !== "Free Tickets") return []
+	if (!coupon.free_add_ons?.length) return []
+	return attendees.value
+		.filter((attendee) => String(attendee.ticket_type) === String(coupon.ticket_type))
+		.slice(0, Math.max(coupon.remaining_tickets ?? 0, 0))
+		.map((attendee) => attendee.id)
+})
+
+watch(couponCoveredAttendeeIds, (coveredIds, previousIds) => {
+	const newlyCovered = coveredIds.filter((id) => !(previousIds ?? []).includes(id))
+	if (!newlyCovered.length) return
+
+	for (const attendee of attendees.value) {
+		if (!newlyCovered.includes(attendee.id)) continue
+		for (const addOnName of couponData.value?.free_add_ons ?? []) {
+			const addOnInfo = props.availableAddOns.find((addOn) => addOn.name === addOnName)
+			if (!addOnInfo) continue
+			attendee.add_ons ??= {}
+			const selection = attendee.add_ons[addOnName] ?? { selected: false, option: null }
+			// Tick it, but leave the size/meal choice to the attendee.
+			selection.selected = true
+			attendee.add_ons[addOnName] = selection
 		}
 	}
 })
@@ -1100,7 +1131,7 @@ async function applyCoupon() {
 				remaining_tickets: result.remaining_tickets,
 				free_add_ons: result.free_add_ons || [],
 			}
-			// Info panel shows details - no toast needed
+			switchAttendeesToCouponTicketType(String(result.ticket_type), result.remaining_tickets)
 		}
 
 		appliedCouponQuery.value = normalizedCode
@@ -1108,6 +1139,27 @@ async function applyCoupon() {
 		couponApplied.value = false
 		couponData.value = null
 		couponError.value = result.error
+	}
+}
+
+// A Free Tickets coupon only covers its own ticket type. If nobody has picked it yet,
+// move attendees onto it (up to the free slots left) so the coupon takes effect
+// instead of failing with "No attendees with eligible ticket type".
+function switchAttendeesToCouponTicketType(couponTicketType: string, remainingTickets: number) {
+	const ticketInfo = ticketTypesMap.value[couponTicketType]
+	if (!ticketInfo) return
+
+	const alreadyEligible = attendees.value.filter(
+		(attendee) => String(attendee.ticket_type) === couponTicketType,
+	).length
+	if (alreadyEligible > 0) return
+
+	const attendeesToSwitch = attendees.value.slice(0, Math.max(remainingTickets, 0))
+	for (const attendee of attendeesToSwitch) {
+		attendee.ticket_type = couponTicketType
+	}
+	if (attendeesToSwitch.length) {
+		toast.success(__("Ticket type changed to {0} for this coupon", [__(ticketInfo.title ?? "")]))
 	}
 }
 
@@ -1141,6 +1193,18 @@ const validateForm = () => {
 			}
 		})
 	}
+
+	// A ticked add-on with options (meal, T-shirt size) needs an explicit choice
+	attendees.value.forEach((attendee, index) => {
+		for (const addOn of props.availableAddOns) {
+			const selection = attendee.add_ons?.[addOn.name]
+			if (addOn.user_selects_option && selection?.selected && !selection.option) {
+				errors.push(
+					__("Please select {0} for Attendee #{1}", [__(addOn.title ?? "").trim(), index + 1]),
+				)
+			}
+		}
+	})
 
 	// Validate ticket-level mandatory fields for each attendee
 	attendees.value.forEach((attendee, index) => {
